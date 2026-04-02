@@ -19,7 +19,7 @@ export interface HouseRawData {
   面积: string;
   朝向: string;
   '总价(万)': string;
-  '单价(元/平)': string;
+  '单价(万/平)': string;
   标签: string;
   详情页URL: string;
   关注人数: string;
@@ -219,11 +219,11 @@ export class HouseParser {
       if (text) tags.push(text.trim());
     }
 
-    // 计算单价
+    // 计算单价（万元/平方米）
     let unitPrice = '';
     if (totalPrice && area) {
       try {
-        unitPrice = (parseFloat(totalPrice) * 10000 / parseFloat(area)).toFixed(2);
+        unitPrice = (parseFloat(totalPrice) / parseFloat(area)).toFixed(4);
       } catch {
         // 忽略计算错误
       }
@@ -237,7 +237,7 @@ export class HouseParser {
       小区链接: communityUrl,
       ...houseInfo,
       '总价(万)': totalPrice,
-      '单价(元/平)': unitPrice,
+      '单价(万/平)': unitPrice,
       标签: tags.join(','),
       详情页URL: detailUrl,
       ...followInfo,

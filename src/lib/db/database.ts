@@ -118,7 +118,7 @@ export async function initDatabase(config?: DBConfig): Promise<void> {
       \`area\` DECIMAL(10, 2) DEFAULT NULL COMMENT '面积（平方米）',
       \`orientation\` VARCHAR(50) DEFAULT NULL COMMENT '朝向',
       \`total_price\` DECIMAL(12, 2) DEFAULT NULL COMMENT '总价（万元）',
-      \`unit_price\` DECIMAL(10, 2) DEFAULT NULL COMMENT '单价（元/平方米）',
+      \`unit_price\` DECIMAL(10, 4) DEFAULT NULL COMMENT '单价（万元/平方米）',
       \`tags\` VARCHAR(500) DEFAULT NULL COMMENT '标签',
       \`detail_url\` VARCHAR(500) DEFAULT NULL COMMENT '详情页URL',
       \`follow_count\` INT UNSIGNED DEFAULT 0 COMMENT '关注人数',

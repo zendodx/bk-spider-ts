@@ -71,7 +71,7 @@ export class DataTransformer {
         area: this.toFloat(raw['面积']?.replace('平米', '')),
         orientation: raw['朝向'] || null,
         total_price: this.toFloat(raw['总价(万)']),
-        unit_price: this.toFloat(raw['单价(元/平)']),
+        unit_price: this.toFloat(raw['单价(万/平)']),
         tags: raw['标签'] || null,
         detail_url: raw['详情页URL'] || null,
         follow_count: this.toInt(raw['关注人数']),
@@ -165,8 +165,8 @@ export class DataTransformer {
   private toFloat(value: unknown): number | null {
     if (!value) return null;
     const clean = String(value)
+      .replace('万/平', '')
       .replace('万', '')
-      .replace('元/平', '')
       .replace('平米', '')
       .replace(',', '')
       .trim();
