@@ -4,9 +4,10 @@ import { useState } from 'react';
 import SpiderPanel from '@/components/SpiderPanel';
 import PredictPanel from '@/components/PredictPanel';
 import StatsPanel from '@/components/StatsPanel';
+import ListingsPanel from '@/components/ListingsPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 
-type Tab = 'spider' | 'predict' | 'stats' | 'settings';
+type Tab = 'spider' | 'predict' | 'stats' | 'listings' | 'settings';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
@@ -15,6 +16,7 @@ export default function Home() {
     { id: 'spider', label: '爬虫采集', icon: '🕷️' },
     { id: 'predict', label: '房价预测', icon: '🏠' },
     { id: 'stats', label: '价格统计', icon: '📊' },
+    { id: 'listings', label: '房源列表', icon: '🏘️' },
     { id: 'settings', label: '系统设置', icon: '⚙️' },
   ];
 
@@ -52,6 +54,7 @@ export default function Home() {
         {activeTab === 'spider' && <SpiderPanel />}
         {activeTab === 'predict' && <PredictPanel />}
         {activeTab === 'stats' && <StatsPanel />}
+        {activeTab === 'listings' && <ListingsPanel />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>
     </div>
