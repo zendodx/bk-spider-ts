@@ -1,0 +1,75 @@
+{
+  "name": "bk-spider",
+  "version": "1.0.0",
+  "description": "贝壳找房爬虫桌面应用 - Electron + Next.js + Playwright",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run next:dev\" \"npm run electron:dev\"",
+    "next:dev": "next dev -p 3799",
+    "next:build": "next build",
+    "electron:dev": "wait-on http://localhost:3799 && electron .",
+    "electron:build": "npm run next:build && electron-builder",
+    "build": "npm run next:build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "next": "^14.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "playwright": "^1.44.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "mysql2": "^3.9.7",
+    "xlsx": "^0.18.5",
+    "electron-store": "^8.2.0",
+    "electron-log": "^5.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.4.5",
+    "tailwindcss": "^3.4.3",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "electron": "^30.0.2",
+    "electron-builder": "^24.13.3",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.3"
+  },
+  "build": {
+    "appId": "com.bkspider.app",
+    "productName": "贝壳找房爬虫",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

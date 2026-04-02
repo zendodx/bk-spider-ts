@@ -1,0 +1,63 @@
+appId: com.bkspider.app
+productName: 贝壳找房爬虫
+copyright: Copyright © 2026
+
+directories:
+  output: dist
+  buildResources: public
+
+files:
+  - electron/**/*
+  - .next/**/*
+  - public/**/*
+  - node_modules/**/*
+  - package.json
+  - next.config.js
+
+extraResources:
+  - from: resources
+    to: resources
+    filter:
+      - "**/*"
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  category: public.app-category.utilities
+  darkModeSupport: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: public/icon.ico
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Utility
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+dmg:
+  contents:
+    - x: 410
+      y: 150
+      type: link
+      path: /Applications
+    - x: 130
+      y: 150
+      type: file
+
+publish: null
