@@ -9,7 +9,7 @@ import { Browser, BrowserContext, Page, chromium } from 'playwright';
 
 export interface DriverOptions {
   headless?: boolean;
-  /** 是否屏蔽图片/字体资源（默认 true，加快加载速度） */
+  /** 是否屏蔽图片/字体资源（默认 false，保留图片确保验证码可见；爬取正文时可开启以加速） */
   blockResources?: boolean;
   /** 是否启用 stealth 模式（默认 true） */
   stealth?: boolean;
@@ -57,7 +57,7 @@ export async function createContext(
   browser: Browser,
   options: DriverOptions = {}
 ): Promise<BrowserContext> {
-  const { blockResources = true } = options;
+  const { blockResources = false } = options;
 
   const context = await browser.newContext({
     userAgent: getRandomUserAgent(),

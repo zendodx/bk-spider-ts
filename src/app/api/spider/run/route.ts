@@ -51,10 +51,10 @@ export async function POST(request: NextRequest) {
           maxDelay,
           pageInterval,
           maxRetries,
-          exportExcel = true,
           exportCsv = true,
           dataDir,
           dbConfig: dbCfg,
+          blockResources = false,
         } = params;
 
         if (!host || !sug) {
@@ -91,7 +91,8 @@ export async function POST(request: NextRequest) {
         // 启动浏览器
         sendLog('正在启动浏览器...');
         const browser = await createBrowser({ headless: false });
-        const context = await createContext(browser, { blockResources: true });
+        sendLog(`屏蔽图片/字体: ${blockResources ? '已开启（加速模式）' : '未开启（完整加载）'}`);
+        const context = await createContext(browser, { blockResources });
         const page = await createPage(context);
 
         try {
@@ -140,15 +141,6 @@ export async function POST(request: NextRequest) {
 
           // 导出数据
           const exportData = spider.getDataForExport();
-
-          if (exportExcel && exportData.length > 0) {
-            try {
-              const excelPath = exporter.toExcel(exportData, sug);
-              sendLog(`✓ Excel 导出: ${excelPath}`);
-            } catch (e) {
-              sendLog(`⚠ Excel 导出失败: ${e}`);
-            }
-          }
 
           if (exportCsv && exportData.length > 0) {
             try {

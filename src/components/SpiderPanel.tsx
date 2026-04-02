@@ -13,9 +13,9 @@ interface SpiderParams {
   maxDelay: number;
   pageInterval: number;
   maxRetries: number;
-  exportExcel: boolean;
   exportCsv: boolean;
   dataDir: string;
+  blockResources: boolean;
 }
 
 interface ProgressInfo {
@@ -43,16 +43,22 @@ export default function SpiderPanel() {
     maxDelay: 3.5,
     pageInterval: 2.0,
     maxRetries: 3,
-    exportExcel: true,
     exportCsv: true,
     dataDir: '',
+    blockResources: false,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [progress, setProgress] = useState<ProgressInfo>({ page: 0, maxPage: 0, totalSaved: 0 });
   const [showCustomSpeed, setShowCustomSpeed] = useState(false);
+  const [isElectron, setIsElectron] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // 在客户端挂载后检测 Electron 环境（避免 SSR Hydration 错误）
+  useEffect(() => {
+    setIsElectron(typeof window !== 'undefined' && !!window.electronAPI);
+  }, []);
 
   // 加载映射和设置
   useEffect(() => {
@@ -74,7 +80,6 @@ export default function SpiderPanel() {
           maxDelay: s.maxDelay || prev.maxDelay,
           pageInterval: s.pageInterval || prev.pageInterval,
           maxRetries: s.maxRetries || prev.maxRetries,
-          exportExcel: s.exportExcel ?? prev.exportExcel,
           exportCsv: s.exportCsv ?? prev.exportCsv,
           dataDir: s.dataDir || prev.dataDir,
         }));
@@ -394,15 +399,6 @@ export default function SpiderPanel() {
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={params.exportExcel}
-                  onChange={e => setParams(p => ({ ...p, exportExcel: e.target.checked }))}
-                  className="text-blue-500"
-                />
-                <span className="text-sm text-gray-700">导出为 Excel (.xlsx)</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
                   checked={params.exportCsv}
                   onChange={e => setParams(p => ({ ...p, exportCsv: e.target.checked }))}
                   className="text-blue-500"
@@ -419,7 +415,7 @@ export default function SpiderPanel() {
                     placeholder="默认：~/bk_spider_data/采集数据"
                     className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  {typeof window !== 'undefined' && window.electronAPI && (
+                  {isElectron && (
                     <button
                       onClick={async () => {
                         const dir = await window.electronAPI!.openDirectory();
@@ -432,6 +428,30 @@ export default function SpiderPanel() {
                   )}
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* 高级设置 */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <span className="w-4 h-4 bg-blue-500 rounded-sm flex items-center justify-center text-white text-xs">4</span>
+              高级设置
+            </h3>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={params.blockResources}
+                  onChange={e => setParams(p => ({ ...p, blockResources: e.target.checked }))}
+                  className="text-blue-500 mt-0.5"
+                />
+                <div>
+                  <span className="text-sm text-gray-700">屏蔽图片/字体资源（加速模式）</span>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    开启后不加载网页图片和字体，可加快爬取速度；若需显示验证码完成登录，请保持<strong>关闭</strong>
+                  </p>
+                </div>
+              </label>
             </div>
           </section>
 
