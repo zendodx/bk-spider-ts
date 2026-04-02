@@ -59,57 +59,21 @@ export async function createContext(
 ): Promise<BrowserContext> {
   const { blockResources = false } = options;
 
+  // 不手动设置 userAgent / sec-ch-ua：stealth 插件内部维护了一套与 JS 指纹完全一致的
+  // Chrome UA，如果在这里随机替换 UA 或手动写 sec-ch-ua，会导致 HTTP 头与 JS 指纹不一致
+  // 从而被贝壳等风控系统识别为机器人（这正是装了 stealth 反而触发验证码的根本原因）。
   const context = await browser.newContext({
-    userAgent: getRandomUserAgent(),
     viewport: { width: 1280, height: 800 },
-    // 伪装常见浏览器属性
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
+    // 只保留 Accept-Language，其余 sec-ch-ua 系列由 stealth 插件自动注入
     extraHTTPHeaders: {
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"macOS"',
     },
   });
 
-  // 注入 stealth 脚本 —— 覆盖 navigator.webdriver 等自动化特征
-  await context.addInitScript(() => {
-    // 删除 webdriver 标记
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-    // 伪造 plugins（真实浏览器有插件）
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => {
-        const mockPlugins = [
-          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-          { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
-        ];
-        return Object.assign(mockPlugins, { length: mockPlugins.length, item: (i: number) => mockPlugins[i] });
-      },
-    });
-
-    // 覆盖 chrome 对象
-    (window as any).chrome = {
-      runtime: {},
-      loadTimes: () => {},
-      csi: () => {},
-      app: {},
-    };
-
-    // 覆盖 permissions
-    const originalQuery = window.navigator.permissions?.query;
-    if (originalQuery) {
-      window.navigator.permissions.query = (parameters: any) =>
-        parameters.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission } as any)
-          : originalQuery(parameters);
-    }
-
-    // 修复 languages
-    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
-  });
+  // ⚠️ 不在这里手动 addInitScript 覆盖 webdriver/plugins/chrome/languages：
+  // stealth 插件已经全部处理，重复注入会导致两套脚本竞争，产生可被检测的异常状态。
 
   // 屏蔽图片 / 字体资源，只加载 HTML/CSS/JS（加速爬取）
   if (blockResources) {
@@ -158,16 +122,4 @@ export async function closeBrowser(): Promise<void> {
   }
 }
 
-/**
- * 获取随机 User-Agent
- */
-function getRandomUserAgent(): string {
-  const userAgents = [
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  ];
-  return userAgents[Math.floor(Math.random() * userAgents.length)];
-}
+
