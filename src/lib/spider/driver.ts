@@ -1,18 +1,21 @@
 /**
  * Playwright 浏览器驱动工厂
  * 对应原 Python 项目 core/driver.py
- * 新增：playwright-extra + stealth 插件绕过自动化指纹检测
- *       屏蔽图片/字体只加载 HTML/CSS/JS
+ * 使用 playwright-extra + stealth 插件绕过自动化指纹检测
+ * 屏蔽图片/字体只加载 HTML/CSS/JS
  */
 
-import { Browser, BrowserContext, Page, chromium } from 'playwright';
+import { Browser, BrowserContext, Page } from 'playwright';
+import { chromium as chromiumExtra } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+
+// 注册 stealth 插件（覆盖 20+ 自动化检测点）
+chromiumExtra.use(StealthPlugin());
 
 export interface DriverOptions {
   headless?: boolean;
   /** 是否屏蔽图片/字体资源（默认 false，保留图片确保验证码可见；爬取正文时可开启以加速） */
   blockResources?: boolean;
-  /** 是否启用 stealth 模式（默认 true） */
-  stealth?: boolean;
   userDataDir?: string;
 }
 
@@ -20,13 +23,10 @@ let _browser: Browser | null = null;
 
 /**
  * 创建并配置 Playwright 浏览器实例
- * 集成了 stealth 伪装 + 资源拦截
+ * 集成了 stealth 插件 + 反检测启动参数
  */
 export async function createBrowser(options: DriverOptions = {}): Promise<Browser> {
-  const {
-    headless = false,
-    stealth: enableStealth = true,
-  } = options;
+  const { headless = false } = options;
 
   // 启动 chromium，注入反检测参数
   const launchArgs = [
@@ -42,7 +42,7 @@ export async function createBrowser(options: DriverOptions = {}): Promise<Browse
     '--window-size=1280,800',
   ];
 
-  _browser = await chromium.launch({
+  _browser = await chromiumExtra.launch({
     headless,
     args: launchArgs,
   });
