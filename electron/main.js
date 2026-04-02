@@ -66,49 +66,45 @@ function startNextServer() {
   return new Promise((resolve, reject) => {
     console.log('[Electron] 正在启动 Next.js 服务...');
 
-    // 获取 Next.js 可执行文件路径
-    const nextBin = path.join(RESOURCES_PATH, 'node_modules', '.bin', 'next');
-    const nextBinFallback = path.join(__dirname, '..', 'node_modules', '.bin', 'next');
-    const actualNextBin = fs.existsSync(nextBin) ? nextBin : nextBinFallback;
+    let cmd, args, cwd;
 
-    // 工作目录
-    const cwd = app.isPackaged
-      ? path.join(RESOURCES_PATH, 'app')
-      : path.join(__dirname, '..');
+    if (app.isPackaged) {
+      // 生产模式：直接用 node 运行 standalone/server.js（Next.js standalone 输出）
+      // 打包后结构：Resources/app/.next/standalone/server.js
+      const standaloneServer = path.join(RESOURCES_PATH, 'app', '.next', 'standalone', 'server.js');
+      cwd = path.dirname(standaloneServer);
+      cmd = process.execPath; // 使用 Electron 内置的 Node.js
+      args = [standaloneServer];
+    } else {
+      // 开发模式：用 next dev（由外部进程启动，此分支实际不会走到）
+      const nextBin = path.join(__dirname, '..', 'node_modules', '.bin', 'next');
+      cwd = path.join(__dirname, '..');
+      cmd = nextBin;
+      args = ['dev', '-p', String(NEXT_PORT)];
+    }
 
     const env = {
       ...process.env,
       PORT: String(NEXT_PORT),
-      NODE_ENV: app.isPackaged ? 'production' : 'development',
+      HOSTNAME: '127.0.0.1',
+      NODE_ENV: 'production',
+      // 静态资源目录指向打包后的 public
+      NEXT_PUBLIC_BASE_PATH: '',
     };
 
-    if (app.isPackaged) {
-      // 生产模式：运行 next start
-      nextProcess = spawn(actualNextBin, ['start', '-p', String(NEXT_PORT)], {
-        cwd,
-        env,
-        stdio: 'pipe',
-      });
-    } else {
-      // 开发模式：运行 next dev
-      nextProcess = spawn(actualNextBin, ['dev', '-p', String(NEXT_PORT)], {
-        cwd,
-        env,
-        stdio: 'pipe',
-      });
-    }
+    nextProcess = spawn(cmd, args, {
+      cwd,
+      env,
+      stdio: 'pipe',
+    });
 
     nextProcess.stdout.on('data', (data) => {
       const msg = data.toString();
       console.log('[Next.js]', msg.trim());
-      if (msg.includes('ready') || msg.includes('started') || msg.includes(String(NEXT_PORT))) {
-        resolve();
-      }
     });
 
     nextProcess.stderr.on('data', (data) => {
       const msg = data.toString();
-      // Next.js 的 stderr 也包含正常日志
       if (!msg.includes('ExperimentalWarning') && !msg.includes('DeprecationWarning')) {
         console.error('[Next.js Error]', msg.trim());
       }
@@ -123,8 +119,8 @@ function startNextServer() {
       console.log(`[Next.js] 进程退出，代码: ${code}`);
     });
 
-    // 超时等待服务就绪
-    waitForServer(NEXT_URL + '/api/settings')
+    // 等待服务就绪（最多 60 秒）
+    waitForServer(NEXT_URL + '/api/settings', 60, 1000)
       .then(resolve)
       .catch(reject);
   });

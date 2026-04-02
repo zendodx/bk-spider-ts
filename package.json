@@ -10,6 +10,8 @@
     "electron:dev": "wait-on http://localhost:3799 && electron .",
     "electron:build": "npm run next:build && electron-builder",
     "build": "npm run next:build && electron-builder",
+    "build:mac": "npm run next:build && electron-builder --mac",
+    "build:win": "npm run next:build && electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [],
@@ -50,26 +52,60 @@
     },
     "files": [
       "electron/**/*",
-      ".next/**/*",
       "public/**/*",
+      "package.json",
+      "next.config.js",
+      ".next/standalone/**/*",
+      ".next/static/**/*",
       "node_modules/**/*",
-      "package.json"
+      "!node_modules/.cache/**/*",
+      "!node_modules/playwright/.local-browsers/**/*",
+      "!node_modules/playwright-core/.local-browsers/**/*",
+      "!**/*.map",
+      "!src/**/*"
     ],
     "extraResources": [
       {
         "from": "resources",
-        "to": "resources"
+        "to": "resources",
+        "filter": ["**/*"]
+      },
+      {
+        "from": ".next/static",
+        "to": "app/.next/static",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "public",
+        "to": "app/public",
+        "filter": ["**/*"]
       }
     ],
+    "afterPack": "scripts/after-install.js",
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "win": {
       "target": "nsis"
     },
     "linux": {
       "target": "AppImage"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "dmg": {
+      "contents": [
+        { "x": 410, "y": 150, "type": "link", "path": "/Applications" },
+        { "x": 130, "y": 150, "type": "file" }
+      ]
     }
   }
 }
