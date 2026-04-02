@@ -16,6 +16,8 @@ export interface SpiderOptions {
   sug: string;
   houseId: string;
   maxPage: number;
+  /** 连续多少页无数据后终止爬取（默认 1） */
+  maxEmptyPages?: number;
   speedController?: AdaptiveSpeedController;
   enableRetry?: boolean;
 }
@@ -36,7 +38,6 @@ export class BeikeSpider {
   private allRawData: HouseRawData[] = [];
 
   private emptyPageCount = 0;
-  private readonly maxEmptyPages = 3;
 
   private _stopped = false;
 
@@ -94,9 +95,10 @@ export class BeikeSpider {
           onProgress, totalSaved, page, maxPage
         );
 
-        if (this.emptyPageCount >= this.maxEmptyPages) {
+        const maxEmptyPages = this.options.maxEmptyPages ?? 1;
+        if (this.emptyPageCount >= maxEmptyPages) {
           this.log(
-            `连续 ${this.maxEmptyPages} 页无数据，爬取结束`,
+            `连续 ${maxEmptyPages} 页无数据，爬取结束`,
             onProgress, totalSaved, page, maxPage
           );
           break;

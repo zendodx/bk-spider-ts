@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
           maxDelay,
           pageInterval,
           maxRetries,
+          maxEmptyPages = 1,
           exportCsv = true,
           dataDir,
           dbConfig: dbCfg,
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
             sug,
             houseId,
             maxPage,
+            maxEmptyPages,
             speedController,
           });
 

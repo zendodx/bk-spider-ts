@@ -13,6 +13,7 @@ interface SpiderParams {
   maxDelay: number;
   pageInterval: number;
   maxRetries: number;
+  maxEmptyPages: number;
   exportCsv: boolean;
   dataDir: string;
   blockResources: boolean;
@@ -43,6 +44,7 @@ export default function SpiderPanel() {
     maxDelay: 3.5,
     pageInterval: 2.0,
     maxRetries: 3,
+    maxEmptyPages: 1,
     exportCsv: true,
     dataDir: '',
     blockResources: false,
@@ -117,6 +119,7 @@ export default function SpiderPanel() {
           maxDelay: s.maxDelay || prev.maxDelay,
           pageInterval: s.pageInterval || prev.pageInterval,
           maxRetries: s.maxRetries || prev.maxRetries,
+          maxEmptyPages: s.maxEmptyPages ?? prev.maxEmptyPages,
           exportCsv: s.exportCsv ?? prev.exportCsv,
           dataDir: s.dataDir || prev.dataDir,
         }));
@@ -375,6 +378,20 @@ export default function SpiderPanel() {
                   />
                 </div>
                 <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">连续空页终止</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={params.maxEmptyPages}
+                    onChange={e => setParams(p => ({ ...p, maxEmptyPages: parseInt(e.target.value) || 1 }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="连续多少页无数据后自动停止"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-600 mb-1">页面等待(秒)</label>
                   <input
                     type="number"
@@ -386,6 +403,7 @@ export default function SpiderPanel() {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                <div className="flex-1" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">速度模式</label>
