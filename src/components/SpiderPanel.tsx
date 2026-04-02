@@ -52,12 +52,49 @@ export default function SpiderPanel() {
   const [progress, setProgress] = useState<ProgressInfo>({ page: 0, maxPage: 0, totalSaved: 0 });
   const [showCustomSpeed, setShowCustomSpeed] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
+  // 小区搜索 combobox
+  const [communityKeyword, setCommunityKeyword] = useState('');
+  const [communityOptions, setCommunityOptions] = useState<string[]>([]);
+  const [communityDropdownOpen, setCommunityDropdownOpen] = useState(false);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const communityRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // 在客户端挂载后检测 Electron 环境（避免 SSR Hydration 错误）
   useEffect(() => {
     setIsElectron(typeof window !== 'undefined' && !!window.electronAPI);
+  }, []);
+
+  // 防抖查询小区（从数据库）
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      setCommunityLoading(true);
+      try {
+        const url = communityKeyword
+          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30`
+          : `/api/community/search?limit=30`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json.success) setCommunityOptions(json.data ?? []);
+      } catch {
+        setCommunityOptions([]);
+      } finally {
+        setCommunityLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [communityKeyword]);
+
+  // 点击组件外部时关闭下拉
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (communityRef.current && !communityRef.current.contains(e.target as Node)) {
+        setCommunityDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // 加载映射和设置
@@ -114,11 +151,6 @@ export default function SpiderPanel() {
       sug,
       houseId: mapping[sug] || prev.houseId,
     }));
-  };
-
-  const handleComboChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const sug = e.target.value;
-    if (sug) handleSugChange(sug);
   };
 
   const handleSpeedModeChange = (mode: string) => {
@@ -248,19 +280,53 @@ export default function SpiderPanel() {
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <div>
+              <div ref={communityRef} className="relative">
                 <label className="block text-xs font-medium text-gray-600 mb-1">
-                  快速选择小区
+                  快速选择小区（输入搜索）
                 </label>
-                <select
-                  onChange={handleComboChange}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">— 请选择 —</option>
-                  {Object.keys(mapping).sort().map(key => (
-                    <option key={key} value={key}>{key}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={communityKeyword}
+                    onChange={e => {
+                      setCommunityKeyword(e.target.value);
+                      setCommunityDropdownOpen(true);
+                    }}
+                    onFocus={() => setCommunityDropdownOpen(true)}
+                    placeholder="输入关键词搜索已采集小区..."
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                  />
+                  {communityLoading && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <svg className="animate-spin h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                    </span>
+                  )}
+                </div>
+                {communityDropdownOpen && communityOptions.length > 0 && (
+                  <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+                    {communityOptions.map(name => (
+                      <li
+                        key={name}
+                        onMouseDown={() => {
+                          handleSugChange(name);
+                          setCommunityKeyword(name);
+                          setCommunityDropdownOpen(false);
+                        }}
+                        className="px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
+                      >
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {communityDropdownOpen && !communityLoading && communityOptions.length === 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400">
+                    {communityKeyword ? '暂无匹配小区' : '数据库暂无小区数据'}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
