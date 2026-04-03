@@ -27,7 +27,7 @@ interface ProgressInfo {
 
 interface LogEntry {
   message: string;
-  type: 'info' | 'success' | 'error' | 'warning';
+  type: 'info' | 'success' | 'error' | 'warning' | 'captcha' | 'captcha_ok';
   timestamp: string;
 }
 
@@ -133,13 +133,17 @@ export default function SpiderPanel() {
   }, [logs]);
 
   const addLog = useCallback((message: string) => {
-    const type = message.includes('✓') || message.includes('完成')
-      ? 'success'
-      : message.includes('❌') || message.includes('错误') || message.includes('异常') || message.includes('失败')
-        ? 'error'
-        : message.includes('⚠') || message.includes('警告')
-          ? 'warning'
-          : 'info';
+    const type = message.startsWith('[CAPTCHA_OK]')
+      ? 'captcha_ok'
+      : message.startsWith('[CAPTCHA]')
+        ? 'captcha'
+        : message.includes('✓') || message.includes('完成')
+          ? 'success'
+          : message.includes('❌') || message.includes('错误') || message.includes('异常') || message.includes('失败')
+            ? 'error'
+            : message.includes('⚠') || message.includes('警告')
+              ? 'warning'
+              : 'info';
 
     setLogs(prev => [...prev, {
       message,
@@ -600,6 +604,24 @@ export default function SpiderPanel() {
             <p className="text-gray-500 text-center mt-8">等待启动爬虫...</p>
           ) : (
             logs.map((log, i) => (
+              log.type === 'captcha' ? (
+                <div key={i} className="my-2 rounded-lg border-2 border-orange-400 bg-orange-950/60 px-4 py-3 animate-pulse">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🚨</span>
+                    <div>
+                      <p className="text-orange-300 font-bold text-sm tracking-wide">人机验证触发！</p>
+                      <p className="text-orange-200 text-xs mt-0.5">请切换到浏览器窗口，手动完成验证后爬虫将自动继续</p>
+                    </div>
+                    <span className="ml-auto text-gray-500 text-xs flex-shrink-0">[{log.timestamp}]</span>
+                  </div>
+                </div>
+              ) : log.type === 'captcha_ok' ? (
+                <div key={i} className="my-2 rounded-lg border border-green-600 bg-green-950/40 px-4 py-2 flex items-center gap-2">
+                  <span className="text-lg">✅</span>
+                  <span className="text-green-400 font-medium text-xs">人机验证已通过，继续爬取</span>
+                  <span className="ml-auto text-gray-500 text-xs flex-shrink-0">[{log.timestamp}]</span>
+                </div>
+              ) : (
               <div key={i} className="flex gap-2 mb-0.5">
                 <span className="text-gray-500 flex-shrink-0">[{log.timestamp}]</span>
                 <span className={
@@ -611,6 +633,7 @@ export default function SpiderPanel() {
                   {log.message}
                 </span>
               </div>
+              )
             ))
           )}
           <div ref={logEndRef} />

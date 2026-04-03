@@ -86,7 +86,7 @@ export class BeikeSpider {
       const url = URLBuilder.buildListUrl(host, houseId, page, sug);
       this.log(`[第 ${page}/${maxPage} 页] ${url}`, onProgress, totalSaved, page, maxPage);
 
-      const houses = await this.parsePageWithRetry(page, url);
+      const houses = await this.parsePageWithRetry(page, url, onProgress, totalSaved);
 
       if (houses.length === 0) {
         this.emptyPageCount++;
@@ -157,14 +157,24 @@ export class BeikeSpider {
     });
   }
 
-  private async parsePageWithRetry(pageNum: number, url: string): Promise<HouseRawData[]> {
+  private async parsePageWithRetry(pageNum: number, url: string, onProgress?: SpiderProgressCallback, totalSaved = 0): Promise<HouseRawData[]> {
     const maxRetries = this.options.speedController?.config.maxRetries ?? 3;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (this._stopped) return [];
 
       try {
-        const houses = await this.parser.parsePage(this.page, url, this.options.host);
+        const houses = await this.parser.parsePage(
+          this.page, url, this.options.host,
+          (resolved) => {
+            if (!resolved) {
+              // 验证码出现：发送醒目的 captcha 类型日志
+              this.log('[CAPTCHA] ⚠️ 检测到人机验证，请手动完成验证后继续...', onProgress, totalSaved, pageNum, this.options.maxPage);
+            } else {
+              this.log('[CAPTCHA_OK] ✓ 人机验证已通过，继续爬取', onProgress, totalSaved, pageNum, this.options.maxPage);
+            }
+          }
+        );
         return houses;
       } catch (e) {
         const errMsg = String(e).toLowerCase();

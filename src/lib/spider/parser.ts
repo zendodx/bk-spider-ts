@@ -43,7 +43,7 @@ export class HouseParser {
    * 解析单页房源
    * 新增：自动滚动触发懒加载
    */
-  async parsePage(page: Page, url: string, host: string): Promise<HouseRawData[]> {
+  async parsePage(page: Page, url: string, host: string, onCaptcha?: (resolved: boolean) => void): Promise<HouseRawData[]> {
     const startTime = Date.now();
 
     // 请求前等待间隔
@@ -54,19 +54,34 @@ export class HouseParser {
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-      // 处理人机验证
-      await this.handleCaptcha(page, url);
+      // 等待列表容器，期间持续检测验证码
+      // 策略：短超时轮询等待列表，每轮检查一次验证码；遇到验证码则无限等待人工完成
+      const LIST_POLL_INTERVAL = 500;       // 每次轮询间隔 500ms
+      const LIST_LOAD_TIMEOUT = 15000;      // 列表加载总超时
+      const listLoadStart = Date.now();
+      let listLoaded = false;
 
-      // 等待列表容器
-      try {
-        await page.waitForSelector('ul.sellListContent', { timeout: 15000 });
-        await page.waitForSelector('ul.sellListContent li.clear', { timeout: 10000 });
-      } catch {
-        console.error('页面加载超时');
-        if (this.speedController) {
-          this.speedController.afterRequest(false);
+      while (!listLoaded) {
+        // 先检测验证码（优先级最高）
+        await this.handleCaptchaIfPresent(page, url, onCaptcha);
+
+        // 检查列表是否已出现
+        const el = await page.$('ul.sellListContent li.clear');
+        if (el) {
+          listLoaded = true;
+          break;
         }
-        return [];
+
+        // 列表还没出现，判断是否超时
+        if (Date.now() - listLoadStart > LIST_LOAD_TIMEOUT) {
+          console.error('页面加载超时');
+          if (this.speedController) {
+            this.speedController.afterRequest(false);
+          }
+          return [];
+        }
+
+        await sleep(LIST_POLL_INTERVAL);
       }
 
       // 自动滚动页面，触发懒加载
@@ -149,19 +164,51 @@ export class HouseParser {
   /**
    * 处理极验验证码
    */
-  private async handleCaptcha(page: Page, originalUrl: string): Promise<void> {
-    const captchaBtn = await page.$('.geetest_btn_click');
-    if (captchaBtn) {
-      console.log('⚠️ 检测到人机验证，等待人工完成...');
-      try {
-        await page.waitForFunction(
-          () => !document.querySelector('.geetest_btn_click'),
-          { timeout: 300000 }
-        );
-        await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      } catch {
-        throw new Error('验证码等待超时');
+  /**
+   * 单次检测验证码：
+   * - 未发现验证码 → 立即返回
+   * - 发现验证码   → 阻塞等待人工完成（最长 5 分钟），完成后重新加载原页面
+   */
+  private async handleCaptchaIfPresent(
+    page: Page,
+    originalUrl: string,
+    onCaptcha?: (resolved: boolean) => void,
+  ): Promise<void> {
+    const CAPTCHA_SELECTORS = [
+      '.geetest_btn_click',       // 极验滑块
+      '.geetest_radar_tip',       // 极验点选
+      '#captcha',
+      '.captcha-container',
+      'div[class*="captcha"]',
+      'div[class*="verify"]',
+    ];
+
+    let found = false;
+    for (const sel of CAPTCHA_SELECTORS) {
+      if (await page.$(sel)) { found = true; break; }
+    }
+    if (!found) {
+      const title = await page.title().catch(() => '');
+      const pageUrl = page.url();
+      if (title.includes('验证') || pageUrl.includes('captcha') || pageUrl.includes('verify')) {
+        found = true;
       }
+    }
+
+    if (!found) return; // 无验证码，直接返回
+
+    console.log('⚠️ 检测到人机验证，等待人工完成...');
+    onCaptcha?.(false);
+    try {
+      await page.waitForFunction(
+        (selectors: string[]) => selectors.every(s => !document.querySelector(s)),
+        CAPTCHA_SELECTORS,
+        { timeout: 300000 } // 最长等待 5 分钟
+      );
+      await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      onCaptcha?.(true);
+    } catch {
+      throw new Error('验证码等待超时（5分钟）');
     }
   }
 
