@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { BrowserContext, Page } from 'playwright';
 import { URLBuilder } from './url-builder';
+import { setWindowVisible } from './driver';
 
 export class AuthManager {
   private cookieFile: string;
@@ -35,8 +36,10 @@ export class AuthManager {
     const loginModal = await page.$('div.window-login');
     if (loginModal) {
       console.log('⚠️ 检测到登录浮层，请手动完成登录');
+      await setWindowVisible(page, true);   // 需要登录：将窗口显示出来
       await this.waitForManualLogin(page, timeout);
       await this.saveCookies(context);
+      await setWindowVisible(page, false);  // 登录完成：将窗口移回屏幕外
       console.log('✓ 登录成功，Cookie 已保存');
     } else {
       console.log('✓ 已恢复登录态');

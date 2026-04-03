@@ -113,6 +113,43 @@ export async function createPage(context: BrowserContext): Promise<Page> {
 }
 
 /**
+ * 通过 CDP 最小化 / 还原浏览器窗口
+ * visible=true  → 还原到屏幕中央（验证码 / 登录时唤出）
+ * visible=false → 最小化（正常爬取时不打扰用户）
+ */
+export async function setWindowVisible(page: Page, visible: boolean): Promise<void> {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      // 先获取真实 windowId
+      const target = await cdp.send('Browser.getWindowForTarget') as { windowId: number };
+      const windowId = target.windowId;
+
+      if (visible) {
+        // 先还原再定位，确保窗口出现在屏幕中央
+        await cdp.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { windowState: 'normal' },
+        });
+        await cdp.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { left: 100, top: 100, width: 1280, height: 800, windowState: 'normal' },
+        });
+      } else {
+        await cdp.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { windowState: 'minimized' },
+        });
+      }
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+  } catch {
+    // CDP 不可用时静默忽略（如 headless 模式）
+  }
+}
+
+/**
  * 关闭浏览器
  */
 export async function closeBrowser(): Promise<void> {

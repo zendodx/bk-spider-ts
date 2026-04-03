@@ -6,6 +6,7 @@
 
 import { Page } from 'playwright';
 import { AdaptiveSpeedController, PageLoadOptimizer, sleep } from './speed-controller';
+import { setWindowVisible } from './driver';
 
 export interface HouseRawData {
   头图: string | null;
@@ -198,6 +199,7 @@ export class HouseParser {
     if (!found) return; // 无验证码，直接返回
 
     console.log('⚠️ 检测到人机验证，等待人工完成...');
+    await setWindowVisible(page, true);  // 验证码出现：将窗口移回屏幕中央
     onCaptcha?.(false);
     try {
       await page.waitForFunction(
@@ -205,9 +207,11 @@ export class HouseParser {
         CAPTCHA_SELECTORS,
         { timeout: 300000 } // 最长等待 5 分钟
       );
+      await setWindowVisible(page, false); // 验证码通过：将窗口移回屏幕外
       await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       onCaptcha?.(true);
     } catch {
+      await setWindowVisible(page, false).catch(() => {});
       throw new Error('验证码等待超时（5分钟）');
     }
   }

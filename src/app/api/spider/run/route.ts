@@ -4,7 +4,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { createBrowser, createContext, createPage, closeBrowser } from '@/lib/spider/driver';
+import { createBrowser, createContext, createPage, closeBrowser, setWindowVisible } from '@/lib/spider/driver';
 import { HouseParser } from '@/lib/spider/parser';
 import { AdaptiveSpeedController, SpeedLevel } from '@/lib/spider/speed-controller';
 import { DataTransformer, CITY_MAPPING, JINAN_DISTRICTS } from '@/lib/spider/data-transformer';
@@ -95,6 +95,8 @@ export async function POST(request: NextRequest) {
         sendLog(`屏蔽图片/字体: ${blockResources ? '已开启（加速模式）' : '未开启（完整加载）'}`);
         const context = await createContext(browser, { blockResources });
         const page = await createPage(context);
+        // 启动后立即最小化窗口，验证码/登录时再自动唤出
+        await setWindowVisible(page, false);
 
         try {
           // 认证
