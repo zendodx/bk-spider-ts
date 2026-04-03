@@ -4,6 +4,64 @@ import { useState } from 'react';
 
 type Version = 'v1' | 'v2';
 
+// ─── 提取到模块级别，避免每次父组件渲染产生新函数引用导致 unmount/remount ───
+function NumberInput({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 99999,
+  step = 1,
+  unit = '',
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+}) {
+  const [localVal, setLocalVal] = useState<string>(String(value));
+
+  // 外部 value 被重置时（如切换版本）同步本地字符串
+  // 只在解析值与外部值真正不同时才更新，不打断用户输入
+  const parsedLocal = parseFloat(localVal);
+  if (!isNaN(parsedLocal) && parsedLocal !== value && localVal !== '') {
+    setLocalVal(String(value));
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-600 mb-1">
+        {label} {unit && <span className="text-xs text-gray-400">({unit})</span>}
+      </label>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={localVal}
+        onChange={e => {
+          setLocalVal(e.target.value);
+          const n = parseFloat(e.target.value);
+          if (!isNaN(n)) onChange(n);
+        }}
+        onBlur={() => {
+          const n = parseFloat(localVal);
+          if (isNaN(n)) {
+            setLocalVal(String(value));
+          } else {
+            setLocalVal(String(n));
+            onChange(n);
+          }
+        }}
+        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  );
+}
+
 interface V1Input {
   monthlyRent: number;
   capitalInterestRate: number;
@@ -92,39 +150,6 @@ export default function PredictPanel() {
 
   const fmt = (n: number, decimals = 0) =>
     n.toLocaleString('zh-CN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-
-  const NumberInput = ({
-    label,
-    value,
-    onChange,
-    min = 0,
-    max = 99999,
-    step = 1,
-    unit = '',
-  }: {
-    label: string;
-    value: number;
-    onChange: (v: number) => void;
-    min?: number;
-    max?: number;
-    step?: number;
-    unit?: string;
-  }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-600 mb-1">
-        {label} {unit && <span className="text-xs text-gray-400">({unit})</span>}
-      </label>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-    </div>
-  );
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50 p-6">
