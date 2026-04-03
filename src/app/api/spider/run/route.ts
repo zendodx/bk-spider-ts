@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
           dataDir,
           dbConfig: dbCfg,
           blockResources = false,
+          captchaTimeoutMinutes = 10,
         } = params;
 
         if (!host || !sug) {
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
           sendLog('✓ 身份认证完成');
 
           // 初始化组件
-          const parser = new HouseParser(pageWait, speedController);
+          const parser = new HouseParser(pageWait, speedController, captchaTimeoutMinutes * 60000);
           const repository = new HouseRepository(pool);
           const transformer = new DataTransformer(CITY_MAPPING, JINAN_DISTRICTS);
           const outputDir = dataDir || getDataDir();

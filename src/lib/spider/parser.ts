@@ -31,11 +31,14 @@ export interface HouseRawData {
 
 export class HouseParser {
   private pageWait: number;
+  private captchaTimeout: number;
   private speedController: AdaptiveSpeedController | null;
   private loadOptimizer: PageLoadOptimizer;
 
-  constructor(pageWait = 1.0, speedController?: AdaptiveSpeedController) {
+  /** @param captchaTimeout 验证码等待超时（毫秒），默认 10 分钟 */
+  constructor(pageWait = 1.0, speedController?: AdaptiveSpeedController, captchaTimeout = 600000) {
     this.pageWait = pageWait;
+    this.captchaTimeout = captchaTimeout;
     this.speedController = speedController ?? null;
     this.loadOptimizer = new PageLoadOptimizer();
   }
@@ -64,7 +67,7 @@ export class HouseParser {
 
       while (!listLoaded) {
         // 先检测验证码（优先级最高）
-        await this.handleCaptchaIfPresent(page, url, onCaptcha);
+        await this.handleCaptchaIfPresent(page, url, onCaptcha, this.captchaTimeout);
 
         // 检查列表是否已出现
         const el = await page.$('ul.sellListContent li.clear');
@@ -174,6 +177,7 @@ export class HouseParser {
     page: Page,
     originalUrl: string,
     onCaptcha?: (resolved: boolean) => void,
+    captchaTimeout = 600000,
   ): Promise<void> {
     const CAPTCHA_SELECTORS = [
       '.geetest_btn_click',       // 极验滑块
@@ -205,14 +209,14 @@ export class HouseParser {
       await page.waitForFunction(
         (selectors: string[]) => selectors.every(s => !document.querySelector(s)),
         CAPTCHA_SELECTORS,
-        { timeout: 300000 } // 最长等待 5 分钟
+        { timeout: captchaTimeout }
       );
       await setWindowVisible(page, false); // 验证码通过：将窗口移回屏幕外
       await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       onCaptcha?.(true);
     } catch {
       await setWindowVisible(page, false).catch(() => {});
-      throw new Error('验证码等待超时（5分钟）');
+      throw new Error(`验证码等待超时（${Math.round(captchaTimeout / 60000)}分钟）`);
     }
   }
 

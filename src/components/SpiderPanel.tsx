@@ -8,6 +8,7 @@ interface SpiderParams {
   houseId: string;
   maxPage: number;
   pageWait: number;
+  captchaTimeoutMinutes: number;
   speedMode: string;
   minDelay: number;
   maxDelay: number;
@@ -39,6 +40,7 @@ export default function SpiderPanel() {
     houseId: '',
     maxPage: 50,
     pageWait: 1.0,
+    captchaTimeoutMinutes: 10,
     speedMode: 'normal',
     minDelay: 1.5,
     maxDelay: 3.5,
@@ -114,6 +116,7 @@ export default function SpiderPanel() {
           sug: s.sug || prev.sug,
           maxPage: s.maxPage || prev.maxPage,
           pageWait: s.pageWait || prev.pageWait,
+                captchaTimeoutMinutes: s.captchaTimeoutMinutes || prev.captchaTimeoutMinutes,
           speedMode: s.speedMode || prev.speedMode,
           minDelay: s.minDelay || prev.minDelay,
           maxDelay: s.maxDelay || prev.maxDelay,
@@ -407,7 +410,19 @@ export default function SpiderPanel() {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <div className="flex-1" />
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">验证码超时(分钟)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    step={1}
+                    value={params.captchaTimeoutMinutes}
+                    onChange={e => setParams(p => ({ ...p, captchaTimeoutMinutes: parseInt(e.target.value) || 10 }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="出现验证码后等待人工处理的最长时间"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">速度模式</label>
