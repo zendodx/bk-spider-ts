@@ -5,6 +5,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 interface ListingRow {
   id: number;
   title: string;
+  header_image: string | null;
+  province: string;
+  city: string;
+  district: string;
   community: string;
   floor_info: string | null;
   build_year: number | null;
@@ -40,16 +44,66 @@ const ORDER_OPTIONS = [
   { value: 'crawl_time|asc',    label: '采集时间 ↑ 最早' },
 ];
 
-// 格式化今天日期为 YYYY-MM-DD
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// 默认7天前
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+// ===== 图片预览弹窗组件 =====
+function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  // 点击遮罩关闭
+  const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={handleBackdrop}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden">
+        {/* 顶部栏 */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <p className="text-sm font-medium text-gray-700 truncate pr-4" title={title}>{title || '房源缩略图'}</p>
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
+            aria-label="关闭"
+          >
+            ✕
+          </button>
+        </div>
+        {/* 图片区：通过后端代理加载，绕过贝壳 CDN 的 Referer 防盗链 */}
+        <div className="flex items-center justify-center bg-gray-100 p-4 min-h-[240px]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/proxy/image?url=${encodeURIComponent(url)}`}
+            alt={title}
+            className="max-w-full max-h-[60vh] object-contain rounded"
+            onError={e => {
+              (e.currentTarget as HTMLImageElement).src =
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='150' viewBox='0 0 200 150'%3E%3Crect fill='%23f3f4f6' width='200' height='150'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239ca3af' font-size='14'%3E%E5%9B%BE%E7%89%87%E5%8A%A0%E8%BD%BD%E5%A4%B1%E8%B4%A5%3C/text%3E%3C/svg%3E";
+            }}
+          />
+        </div>
+        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-500 hover:underline break-all"
+          >
+            {url}
+          </a>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ListingsPanel() {
@@ -74,6 +128,9 @@ export default function ListingsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const [queried, setQueried] = useState(false);
+
+  // 图片弹窗
+  const [imgModal, setImgModal] = useState<{ url: string; title: string } | null>(null);
 
   // 防抖查询小区候选
   useEffect(() => {
@@ -162,6 +219,15 @@ export default function ListingsPanel() {
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
+      {/* ===== 图片弹窗 ===== */}
+      {imgModal && (
+        <ImageModal
+          url={imgModal.url}
+          title={imgModal.title}
+          onClose={() => setImgModal(null)}
+        />
+      )}
+
       {/* ===== 筛选条件区 ===== */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex flex-wrap items-end gap-4">
@@ -348,15 +414,25 @@ export default function ListingsPanel() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap w-16">操作</th>
+                    {/* 操作列 */}
+                    <th className="px-2 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">操作</th>
+                    {/* 序号 */}
                     <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">#</th>
+                    {/* 省市区 */}
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">省</th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">市</th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">区</th>
+                    {/* 基础信息 */}
                     <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">小区</th>
                     <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">标题</th>
+                    {/* 缩略图 */}
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">缩略图</th>
                     <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">户型</th>
                     <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">面积(㎡)</th>
                     <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">楼层</th>
                     <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">朝向</th>
                     <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">年份</th>
+                    {/* 价格 */}
                     <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">
                       单价<br /><span className="font-normal text-gray-400">(元/平)</span>
                     </th>
@@ -370,23 +446,28 @@ export default function ListingsPanel() {
                 <tbody className="divide-y divide-gray-100">
                   {rows.map((row, idx) => (
                     <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
-                      {/* 操作列 */}
-                      <td className="px-2 py-2 text-center">
+                      {/* 操作列：仅详情链接 */}
+                      <td className="px-2 py-1.5 text-center whitespace-nowrap">
                         {row.detail_url ? (
                           <a
                             href={row.detail_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-0.5 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors whitespace-nowrap"
+                            className="inline-flex items-center px-1.5 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
+                            title="查看详情"
                           >
-                            🔗 详情
+                            🔗
                           </a>
                         ) : (
-                          <span className="text-gray-300 text-xs">—</span>
+                          <span className="text-gray-300 text-xs px-1.5 py-1">—</span>
                         )}
                       </td>
                       {/* 序号 */}
                       <td className="px-3 py-2 text-right text-gray-400 bg-orange-50/30">{idx + 1}</td>
+                      {/* 省市区 */}
+                      <td className="px-3 py-2 text-center text-gray-500 whitespace-nowrap">{row.province || '—'}</td>
+                      <td className="px-3 py-2 text-center text-gray-500 whitespace-nowrap">{row.city || '—'}</td>
+                      <td className="px-3 py-2 text-center text-gray-500 whitespace-nowrap">{row.district || '—'}</td>
                       {/* 小区 */}
                       <td className="px-3 py-2 text-gray-700 font-medium whitespace-nowrap max-w-[120px] truncate" title={row.community}>
                         {row.community}
@@ -394,6 +475,20 @@ export default function ListingsPanel() {
                       {/* 标题 */}
                       <td className="px-3 py-2 text-gray-600 max-w-[200px] truncate" title={row.title}>
                         {row.title || '—'}
+                      </td>
+                      {/* 缩略图 */}
+                      <td className="px-3 py-2 text-center">
+                        {row.header_image ? (
+                          <button
+                            onClick={() => setImgModal({ url: row.header_image!, title: row.title || row.community })}
+                            className="inline-flex items-center px-1.5 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
+                            title="预览缩略图"
+                          >
+                            🖼️
+                          </button>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                       {/* 户型 */}
                       <td className="px-3 py-2 text-center text-gray-700 whitespace-nowrap">{row.house_type || '—'}</td>

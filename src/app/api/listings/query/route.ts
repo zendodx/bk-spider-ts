@@ -14,6 +14,10 @@ export const runtime = 'nodejs';
 export interface ListingRow {
   id: number;
   title: string;
+  header_image: string | null;
+  province: string;
+  city: string;
+  district: string;
   community: string;
   floor_info: string | null;
   build_year: number | null;
@@ -80,30 +84,47 @@ export async function GET(request: NextRequest) {
 
     const where = conditions.join(' AND ');
 
+    // 按 detail_url 去重，保留 created_at 最新的那一行：
+    // 1. 子查询：在满足条件的记录中，按 detail_url 分组取最大 created_at
+    // 2. 外层 JOIN 回原表取完整字段
+    // 3. 最外层按用户指定字段排序并分页
     const sql = `
       SELECT
-        id,
-        title,
-        community,
-        floor_info,
-        build_year,
-        house_type,
-        area,
-        orientation,
-        total_price,
-        unit_price,
-        tags,
-        detail_url,
-        follow_count,
-        DATE_FORMAT(publish_time, '%Y-%m-%d') AS publish_time,
-        DATE_FORMAT(crawl_time,   '%Y-%m-%d %H:%i') AS crawl_time
-      FROM house_listings
+        t.id,
+        t.title,
+        t.header_image,
+        t.province,
+        t.city,
+        t.district,
+        t.community,
+        t.floor_info,
+        t.build_year,
+        t.house_type,
+        t.area,
+        t.orientation,
+        t.total_price,
+        t.unit_price,
+        t.tags,
+        t.detail_url,
+        t.follow_count,
+        DATE_FORMAT(t.publish_time, '%Y-%m-%d')       AS publish_time,
+        DATE_FORMAT(t.crawl_time,   '%Y-%m-%d %H:%i') AS crawl_time
+      FROM house_listings t
+      INNER JOIN (
+        SELECT detail_url, MAX(created_at) AS max_created
+        FROM house_listings
+        WHERE ${where}
+        GROUP BY detail_url
+      ) dedup
+        ON t.detail_url = dedup.detail_url
+       AND t.created_at  = dedup.max_created
       WHERE ${where}
-      ORDER BY ${orderBy} ${order}
+      ORDER BY t.${orderBy} ${order}
       LIMIT ?
     `;
 
-    const [rows] = await pool.query(sql, [...params, limit]) as any;
+    // 子查询和外层 WHERE 各用一份 params，最后加 limit
+    const [rows] = await pool.query(sql, [...params, ...params, limit]) as any;
 
     return Response.json({ success: true, data: rows as ListingRow[], total: rows.length });
   } catch (e) {
