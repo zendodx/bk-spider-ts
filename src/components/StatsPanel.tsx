@@ -761,7 +761,7 @@ export default function StatsPanel() {
             <div className="grid grid-cols-4 gap-4 mb-4">
               {[
                 { label: '统计天数', value: `${rows.length} 天` },
-                { label: '总样本量', value: `${rows.reduce((s, r) => s + r.unique_listings, 0)} 套` },
+                { label: '总挂牌量', value: `${rows.reduce((s, r) => s + r.unique_listings, 0)} 套` },
                 {
                   label: '最新平均单价',
                   value: rows[0]?.avg_unit_price != null
@@ -802,7 +802,7 @@ export default function StatsPanel() {
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">日期</th>
-                      <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">样本数</th>
+                      <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">挂牌量</th>
                       <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">最低价<br /><span className="font-normal text-gray-400">(元/平)</span></th>
                       <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">均价<br /><span className="font-normal text-gray-400">(元/平)</span></th>
                       <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">最高价<br /><span className="font-normal text-gray-400">(元/平)</span></th>
@@ -817,10 +817,14 @@ export default function StatsPanel() {
                     {rows.map((row, idx) => (
                       <tr key={row.stat_date} className="hover:bg-gray-50 transition-colors">
                         <td className="px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{row.stat_date}</td>
-                        <td className="px-3 py-2 text-right text-gray-600">{row.unique_listings}</td>
+                        <td className="px-3 py-2 text-right text-gray-600">
+                          {row.unique_listings}
+                          {trend(rows, idx, 'unique_listings')}
+                        </td>
                         {/* 单价列（橙色背景组） */}
                         <td className="px-3 py-2 text-right text-gray-700 bg-orange-50/40">
                           {fmtUnitPrice(row.min_unit_price)}
+                          {trend(rows, idx, 'min_unit_price')}
                         </td>
                         <td className="px-3 py-2 text-right font-medium text-gray-800 bg-orange-50/40">
                           {fmtUnitPrice(row.avg_unit_price)}
@@ -828,6 +832,7 @@ export default function StatsPanel() {
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700 bg-orange-50/40">
                           {fmtUnitPrice(row.max_unit_price)}
+                          {trend(rows, idx, 'max_unit_price')}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700 bg-orange-50/40">
                           {fmtUnitPrice(row.median_unit_price)}
@@ -836,6 +841,7 @@ export default function StatsPanel() {
                         {/* 总价列（蓝色背景组） */}
                         <td className="px-3 py-2 text-right text-gray-700 bg-blue-50/40">
                           {fmtPrice(row.min_price)}
+                          {trend(rows, idx, 'min_price')}
                         </td>
                         <td className="px-3 py-2 text-right font-medium text-gray-800 bg-blue-50/40">
                           {fmtPrice(row.avg_price)}
@@ -843,6 +849,7 @@ export default function StatsPanel() {
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700 bg-blue-50/40">
                           {fmtPrice(row.max_price)}
+                          {trend(rows, idx, 'max_price')}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700 bg-blue-50/40">
                           {fmtPrice(row.median_price)}
