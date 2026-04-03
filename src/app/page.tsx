@@ -49,13 +49,13 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* 内容区域 */}
+      {/* 内容区域：所有 Panel 始终挂载，通过 CSS 控制显隐，避免切换 Tab 时状态被重置 */}
       <main className="flex-1 overflow-hidden">
-        {activeTab === 'spider' && <SpiderPanel />}
-        {activeTab === 'predict' && <PredictPanel />}
-        {activeTab === 'stats' && <StatsPanel />}
-        {activeTab === 'listings' && <ListingsPanel />}
-        {activeTab === 'settings' && <SettingsPanel />}
+        <div className="h-full" style={{ display: activeTab === 'spider'   ? 'block' : 'none' }}><SpiderPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'predict'  ? 'block' : 'none' }}><PredictPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'stats'    ? 'block' : 'none' }}><StatsPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'listings' ? 'block' : 'none' }}><ListingsPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'settings' ? 'block' : 'none' }}><SettingsPanel /></div>
       </main>
     </div>
   );
