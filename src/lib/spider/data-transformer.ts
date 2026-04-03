@@ -122,14 +122,17 @@ export class DataTransformer {
       if (text.includes('.')) {
         const parts = text.split('.');
         if (parts.length === 3) {
-          return new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
+          // 明确指定北京时间，避免 JS 将 "YYYY-MM-DD" 格式当 UTC 处理
+          return new Date(`${parts[0]}-${parts[1]}-${parts[2]}T00:00:00+08:00`);
         }
       }
 
       const daysMatch = text.match(/(\d+)天前/);
       if (daysMatch) {
         const days = parseInt(daysMatch[1]);
-        const d = new Date();
+        // 取当前北京日期，再减去天数
+        const todayStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+        const d = new Date(`${todayStr}T00:00:00+08:00`);
         d.setDate(d.getDate() - days);
         return d;
       }
@@ -137,7 +140,8 @@ export class DataTransformer {
       const monthsMatch = text.match(/(\d+)个月前/);
       if (monthsMatch) {
         const months = parseInt(monthsMatch[1]);
-        const d = new Date();
+        const todayStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+        const d = new Date(`${todayStr}T00:00:00+08:00`);
         d.setDate(d.getDate() - months * 30);
         return d;
       }
@@ -150,7 +154,8 @@ export class DataTransformer {
 
   private parseCrawlTime(text: string): Date {
     try {
-      return new Date(text.replace(' ', 'T'));
+      // text 是北京时间（UTC+8）格式如 "2026-04-03 10:30:00"，需要明确加上时区后缀
+      return new Date(text.replace(' ', 'T') + '+08:00');
     } catch {
       return new Date();
     }

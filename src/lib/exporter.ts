@@ -36,7 +36,7 @@ export class DataExporter {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
 
-    const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const date = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10).replace(/-/g, '');
     const filename = `${filenamePrefix}_${date}.xlsx`;
     const filepath = path.join(this.outputDir, filename);
 
@@ -64,7 +64,7 @@ export class DataExporter {
     const ws = XLSX.utils.json_to_sheet(cleanData);
     const csv = XLSX.utils.sheet_to_csv(ws);
 
-    const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const date = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10).replace(/-/g, '');
     const filename = `${filenamePrefix}_${date}.csv`;
     const filepath = path.join(this.outputDir, filename);
 

@@ -40,12 +40,12 @@ const ORDER_OPTIONS = [
   { value: 'total_price|desc',  label: '总价 ↓ 降序' },
   { value: 'area|asc',          label: '面积 ↑ 升序' },
   { value: 'area|desc',         label: '面积 ↓ 降序' },
-  { value: 'crawl_time|desc',   label: '采集时间 ↓ 最新' },
-  { value: 'crawl_time|asc',    label: '采集时间 ↑ 最早' },
+  { value: 'created_at|desc',   label: '采集时间 ↓ 最新' },
+  { value: 'created_at|asc',    label: '采集时间 ↑ 最早' },
 ];
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
 }
 
 // ===== 图片预览弹窗组件 =====

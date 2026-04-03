@@ -6,6 +6,15 @@
 import { Pool } from 'mysql2/promise';
 import { HouseRecord } from '../spider/data-transformer';
 
+/**
+ * 将 Date 对象格式化为北京时间字符串 "YYYY-MM-DD HH:MM:SS"
+ * 因为 mysql2 连接配置了 timezone: '+08:00'，传入的字符串会被当成北京时间处理，
+ * 所以必须传北京时间字符串，而非 toISOString() 输出的 UTC 字符串。
+ */
+function toBeijingTimeStr(date: Date): string {
+  return date.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
+}
+
 export class HouseRepository {
   constructor(private pool: Pool) {}
 
@@ -58,8 +67,8 @@ export class HouseRepository {
       r.tags,
       r.detail_url,
       r.follow_count,
-      r.publish_time ? r.publish_time.toISOString().slice(0, 19).replace('T', ' ') : null,
-      r.crawl_time.toISOString().slice(0, 19).replace('T', ' '),
+      r.publish_time ? toBeijingTimeStr(r.publish_time) : null,
+      toBeijingTimeStr(r.crawl_time),
       r.is_deleted ? 1 : 0,
     ]);
 

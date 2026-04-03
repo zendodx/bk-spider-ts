@@ -241,7 +241,7 @@ export class HouseParser {
       标签: tags.join(','),
       详情页URL: detailUrl,
       ...followInfo,
-      采集时间: new Date().toISOString().replace('T', ' ').split('.')[0],
+      采集时间: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' '),
       _host: host,
     };
   }

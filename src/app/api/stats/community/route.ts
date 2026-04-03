@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
         ROUND(median_price, 2)          AS median_price
       FROM (
         SELECT
-          DATE(crawl_time)                   AS stat_date,
+          DATE(created_at)                   AS stat_date,
           COUNT(DISTINCT detail_url)         AS unique_listings,
           MIN(unit_price)                    AS min_unit_price,
           AVG(unit_price)                    AS avg_unit_price,
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
           ) + 0                              AS median_price
         FROM house_listings
         WHERE ${where}
-        GROUP BY DATE(crawl_time)
+        GROUP BY DATE(created_at)
       ) t
       ORDER BY stat_date DESC
       LIMIT ?

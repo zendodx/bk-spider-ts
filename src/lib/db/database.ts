@@ -42,6 +42,7 @@ export function initPool(config?: DBConfig): mysql.Pool {
     queueLimit: 0,
     charset: 'utf8mb4',
     timezone: '+08:00',
+    dateStrings: true,        // 禁止 mysql2 自动将 DATETIME/DATE 转成 JS Date 对象，保持字符串原样返回
     supportBigNumbers: true,
     bigNumberStrings: false,
   });

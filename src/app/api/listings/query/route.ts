@@ -1,7 +1,7 @@
 /**
  * 房源列表查询 API
  * GET /api/listings/query?community=xxx&crawlDate=2026-03-24&houseType=3室&excludeBasement=true&excludeLowFloor=true&orderBy=unit_price&order=asc&limit=500
- * crawlDate 为精确日期，查询当天采集的数据（DATE(crawl_time) = crawlDate）
+ * crawlDate 为精确日期，查询当天采集的数据（DATE(created_at) = crawlDate）
  */
 
 import { NextRequest } from 'next/server';
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     const excludeBasement  = searchParams.get('excludeBasement') !== 'false';
     const excludeLowFloor  = searchParams.get('excludeLowFloor') !== 'false';
     // 排序字段白名单，防注入
-    const allowedOrder   = ['unit_price', 'total_price', 'area', 'crawl_time'];
+    const allowedOrder   = ['unit_price', 'total_price', 'area', 'created_at'];
     const rawOrderBy     = searchParams.get('orderBy')?.trim() ?? 'unit_price';
     const orderBy        = allowedOrder.includes(rawOrderBy) ? rawOrderBy : 'unit_price';
     const order          = searchParams.get('order') === 'desc' ? 'DESC' : 'ASC';
@@ -64,8 +64,8 @@ export async function GET(request: NextRequest) {
     params.push(`%${community}%`);
 
     if (crawlDate) {
-      // 精确匹配某一天：DATE(crawl_time) = 'YYYY-MM-DD'
-      conditions.push('DATE(crawl_time) = ?');
+      // 精确匹配某一天：DATE(created_at) = 'YYYY-MM-DD'
+      conditions.push('DATE(created_at) = ?');
       params.push(crawlDate);
     }
 
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
         t.detail_url,
         t.follow_count,
         DATE_FORMAT(t.publish_time, '%Y-%m-%d')       AS publish_time,
-        DATE_FORMAT(t.crawl_time,   '%Y-%m-%d %H:%i') AS crawl_time
+        DATE_FORMAT(t.created_at, '%Y-%m-%d %H:%i')                                 AS crawl_time
       FROM house_listings t
       INNER JOIN (
         SELECT detail_url, MAX(created_at) AS max_created
