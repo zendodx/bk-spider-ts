@@ -48,6 +48,224 @@ function today(): string {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
 }
 
+// ===== 价格历史数据类型 =====
+interface PriceHistoryRow {
+  id: number;
+  crawl_date: string;
+  crawl_time: string;
+  unit_price: number | null;
+  total_price: number | null;
+  follow_count: number;
+}
+
+// ===== 趋势箭头组件 =====
+function TrendArrow({ curr, prev }: { curr: number | null; prev: number | null }) {
+  if (curr == null || prev == null) return null;
+  const diff = Number(curr) - Number(prev);
+  if (Math.abs(diff) < 0.0001) return <span className="text-gray-400 ml-1 text-xs">—</span>;
+  if (diff > 0) return <span className="text-red-500 ml-1 text-xs font-bold">↑</span>;
+  return <span className="text-green-600 ml-1 text-xs font-bold">↓</span>;
+}
+
+// ===== 价格历史弹窗组件 =====
+function PriceHistoryModal({
+  detailUrl,
+  title,
+  onClose,
+}: {
+  detailUrl: string;
+  title: string;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [rows, setRows] = useState<PriceHistoryRow[]>([]);
+  const [inputUrl, setInputUrl] = useState(detailUrl);
+  const [queriedUrl, setQueriedUrl] = useState('');
+
+  const fmtUnit = (v: number | null) => {
+    if (v == null) return '-';
+    return `${(Number(v) * 10000).toFixed(0)}`;
+  };
+  const fmtPrice = (v: number | null) => {
+    if (v == null) return '-';
+    return Number(v).toFixed(2);
+  };
+
+  const handleQuery = useCallback(async (url: string) => {
+    const u = url.trim();
+    if (!u) return;
+    setLoading(true);
+    setError('');
+    setRows([]);
+    setQueriedUrl(u);
+    try {
+      const res = await fetch(`/api/listings/price-history?detailUrl=${encodeURIComponent(u)}`);
+      const json = await res.json();
+      if (json.success) {
+        setRows(json.data ?? []);
+      } else {
+        setError(json.error ?? '查询失败');
+      }
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 首次自动查询
+  useEffect(() => {
+    if (detailUrl) handleQuery(detailUrl);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={handleBackdrop}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[85vh]">
+        {/* 顶部标题栏 */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-gray-700">📈 价格历史</span>
+            {title && <span className="text-xs text-gray-400 truncate max-w-xs" title={title}>{title}</span>}
+          </div>
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
+            aria-label="关闭"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* 输入 URL 查询栏 */}
+        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputUrl}
+              onChange={e => setInputUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleQuery(inputUrl); }}
+              placeholder="输入 detail_url 查询价格历史..."
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+            />
+            <button
+              onClick={() => handleQuery(inputUrl)}
+              disabled={loading}
+              className="px-4 py-1.5 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {loading ? '查询中...' : '🔍 查询'}
+            </button>
+          </div>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto px-4 py-3">
+          {error && (
+            <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">❌ {error}</div>
+          )}
+
+          {!loading && !error && rows.length === 0 && queriedUrl && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <span className="text-4xl mb-3">📭</span>
+              <p className="text-sm">暂无该房源的价格历史记录</p>
+            </div>
+          )}
+
+          {!loading && !queriedUrl && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <span className="text-4xl mb-3">🔍</span>
+              <p className="text-sm">输入 detail_url 后点击查询</p>
+            </div>
+          )}
+
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm">加载中...</span>
+            </div>
+          )}
+
+          {rows.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-400 mb-2">共 {rows.length} 条记录，按采集日期倒序排列</div>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">#</th>
+                    <th className="px-3 py-2 text-center font-semibold text-gray-600 whitespace-nowrap">采集日期</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">
+                      单价<br /><span className="font-normal text-gray-400">(元/平)</span>
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap bg-blue-50">
+                      总价<br /><span className="font-normal text-gray-400">(万)</span>
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">关注</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rows.map((row, idx) => {
+                    const nextRow = rows[idx + 1] ?? null; // 下一条（时间更早）
+                    return (
+                      <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2 text-right text-gray-400">{idx + 1}</td>
+                        <td className="px-3 py-2 text-center text-gray-600 whitespace-nowrap font-mono">{row.crawl_date}</td>
+                        {/* 单价 + 趋势 */}
+                        <td className="px-3 py-2 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
+                          {fmtUnit(row.unit_price)}
+                          <TrendArrow curr={row.unit_price} prev={nextRow?.unit_price ?? null} />
+                        </td>
+                        {/* 总价 + 趋势 */}
+                        <td className="px-3 py-2 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
+                          {fmtPrice(row.total_price)}
+                          <TrendArrow curr={row.total_price} prev={nextRow?.total_price ?? null} />
+                        </td>
+                        {/* 关注 */}
+                        <td className="px-3 py-2 text-right text-gray-500">{row.follow_count ?? 0}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 底部：链接 */}
+        {queriedUrl && (
+          <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+            <a
+              href={queriedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-500 hover:underline break-all"
+            >
+              {queriedUrl}
+            </a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ===== 图片预览弹窗组件 =====
 function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   // 点击遮罩关闭
@@ -131,6 +349,9 @@ export default function ListingsPanel() {
 
   // 图片弹窗
   const [imgModal, setImgModal] = useState<{ url: string; title: string } | null>(null);
+
+  // 价格历史弹窗
+  const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
 
   // 防抖查询小区候选
   useEffect(() => {
@@ -225,6 +446,15 @@ export default function ListingsPanel() {
           url={imgModal.url}
           title={imgModal.title}
           onClose={() => setImgModal(null)}
+        />
+      )}
+
+      {/* ===== 价格历史弹窗 ===== */}
+      {priceHistoryModal && (
+        <PriceHistoryModal
+          detailUrl={priceHistoryModal.detailUrl}
+          title={priceHistoryModal.title}
+          onClose={() => setPriceHistoryModal(null)}
         />
       )}
 
@@ -498,21 +728,30 @@ export default function ListingsPanel() {
                       <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{row.follow_count ?? 0}</td>
                       {/* 采集时间 */}
                       <td className="px-4 py-2.5 text-center text-gray-400 whitespace-nowrap">{row.crawl_time}</td>
-                      {/* 操作列：仅详情链接 */}
+                      {/* 操作列：详情链接 + 价格历史 */}
                       <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                        {row.detail_url ? (
-                          <a
-                            href={row.detail_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
-                            title="查看详情"
+                        <div className="inline-flex items-center gap-1">
+                          {row.detail_url ? (
+                            <a
+                              href={row.detail_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
+                              title="查看详情"
+                            >
+                              🔗
+                            </a>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                          <button
+                            onClick={() => setPriceHistoryModal({ detailUrl: row.detail_url ?? '', title: row.title || row.community })}
+                            className="inline-flex items-center px-2 py-1 bg-emerald-500 text-white text-xs rounded hover:bg-emerald-600 transition-colors"
+                            title="查看价格历史"
                           >
-                            🔗
-                          </a>
-                        ) : (
-                          <span className="text-gray-300 text-xs">—</span>
-                        )}
+                            📈
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
