@@ -411,77 +411,61 @@ export default function ListingsPanel() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="min-w-max w-full text-xs border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                    {/* 操作列 */}
-                    <th className="px-2 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">操作</th>
+                  <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     {/* 序号 */}
-                    <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">#</th>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">#</th>
                     {/* 省市区 */}
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">省</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">市</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">区</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">省</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">市</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">区</th>
                     {/* 基础信息 */}
-                    <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">小区</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">标题</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap">小区</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap">标题</th>
                     {/* 缩略图 */}
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">缩略图</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">户型</th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">面积(㎡)</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">楼层</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">朝向</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">年份</th>
+                    <th className="px-3 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">缩略图</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">户型</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-600 whitespace-nowrap">面积(㎡)</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">楼层</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">朝向</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">年份</th>
                     {/* 价格 */}
-                    <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">
+                    <th className="px-4 py-3 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">
                       单价<br /><span className="font-normal text-gray-400">(元/平)</span>
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-blue-50">
+                    <th className="px-4 py-3 text-right font-semibold text-gray-600 whitespace-nowrap bg-blue-50">
                       总价<br /><span className="font-normal text-gray-400">(万)</span>
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">关注</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">采集时间</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-600 whitespace-nowrap">关注</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">采集时间</th>
+                    {/* 操作列 */}
+                    <th className="px-3 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {rows.map((row, idx) => (
-                    <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
-                      {/* 操作列：仅详情链接 */}
-                      <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                        {row.detail_url ? (
-                          <a
-                            href={row.detail_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center px-1.5 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
-                            title="查看详情"
-                          >
-                            🔗
-                          </a>
-                        ) : (
-                          <span className="text-gray-300 text-xs px-1.5 py-1">—</span>
-                        )}
-                      </td>
+                    <tr key={row.id} className="hover:bg-blue-50/30 transition-colors border-b border-gray-100 last:border-0">
                       {/* 序号 */}
-                      <td className="px-3 py-2 text-right text-gray-400 bg-orange-50/30">{idx + 1}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-400 bg-orange-50/30 whitespace-nowrap">{idx + 1}</td>
                       {/* 省市区 */}
-                      <td className="px-3 py-2 text-center text-gray-500 whitespace-nowrap">{row.province || '—'}</td>
-                      <td className="px-3 py-2 text-center text-gray-500 whitespace-nowrap">{row.city || '—'}</td>
-                      <td className="px-3 py-2 text-center text-gray-500 whitespace-nowrap">{row.district || '—'}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">{row.province || '—'}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">{row.city || '—'}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">{row.district || '—'}</td>
                       {/* 小区 */}
-                      <td className="px-3 py-2 text-gray-700 font-medium whitespace-nowrap max-w-[120px] truncate" title={row.community}>
+                      <td className="px-4 py-2.5 text-gray-700 font-medium whitespace-nowrap">
                         {row.community}
                       </td>
-                      {/* 标题 */}
-                      <td className="px-3 py-2 text-gray-600 max-w-[200px] truncate" title={row.title}>
+                      {/* 标题：完整展示，不截断 */}
+                      <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">
                         {row.title || '—'}
                       </td>
                       {/* 缩略图 */}
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
                         {row.header_image ? (
                           <button
                             onClick={() => setImgModal({ url: row.header_image!, title: row.title || row.community })}
-                            className="inline-flex items-center px-1.5 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
+                            className="inline-flex items-center px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
                             title="预览缩略图"
                           >
                             🖼️
@@ -491,29 +475,45 @@ export default function ListingsPanel() {
                         )}
                       </td>
                       {/* 户型 */}
-                      <td className="px-3 py-2 text-center text-gray-700 whitespace-nowrap">{row.house_type || '—'}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-700 whitespace-nowrap">{row.house_type || '—'}</td>
                       {/* 面积 */}
-                      <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">{fmtArea(row.area)}</td>
-                      {/* 楼层 */}
-                      <td className="px-3 py-2 text-center text-gray-600 whitespace-nowrap max-w-[80px] truncate" title={row.floor_info ?? ''}>
+                      <td className="px-4 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtArea(row.area)}</td>
+                      {/* 楼层：完整展示，不截断 */}
+                      <td className="px-4 py-2.5 text-center text-gray-600 whitespace-nowrap">
                         {row.floor_info || '—'}
                       </td>
                       {/* 朝向 */}
-                      <td className="px-3 py-2 text-center text-gray-600 whitespace-nowrap">{row.orientation || '—'}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-600 whitespace-nowrap">{row.orientation || '—'}</td>
                       {/* 年份 */}
-                      <td className="px-3 py-2 text-center text-gray-600 whitespace-nowrap">{row.build_year || '—'}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-600 whitespace-nowrap">{row.build_year || '—'}</td>
                       {/* 单价 */}
-                      <td className="px-3 py-2 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
                         {fmtUnit(row.unit_price)}
                       </td>
                       {/* 总价 */}
-                      <td className="px-3 py-2 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
                         {fmtPrice(row.total_price)}
                       </td>
                       {/* 关注 */}
-                      <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">{row.follow_count ?? 0}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{row.follow_count ?? 0}</td>
                       {/* 采集时间 */}
-                      <td className="px-3 py-2 text-center text-gray-400 whitespace-nowrap">{row.crawl_time}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-400 whitespace-nowrap">{row.crawl_time}</td>
+                      {/* 操作列：仅详情链接 */}
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                        {row.detail_url ? (
+                          <a
+                            href={row.detail_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
+                            title="查看详情"
+                          >
+                            🔗
+                          </a>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
