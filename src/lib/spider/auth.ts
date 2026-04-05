@@ -20,35 +20,33 @@ export class AuthManager {
   }
 
   /**
-   * 确保登录状态
+   * 确保登录状态（对应 Python ensure_login）
    *
-   * 优化后流程（尽量减少页面导航次数）：
-   *
-   * 有 Cookie 文件：
-   *   1. 加载 Cookie（无需先导航，addCookies 根据 cookie.domain 生效）
-   *   2. 直接 goto(testUrl) —— 只需 1 次导航
-   *   3. 用 Promise.race 同时检测登录浮层 OR 正常页面元素，哪个先出现立即决策
-   *
-   * 无 Cookie 文件：
-   *   1. goto(host) —— 1 次导航，展示登录页
-   *   2. 等待人工登录
+   * 流程：
+   * 1. 先访问 host 主页（建立域名上下文）
+   * 2. 若有已保存的 Cookie 则加载，并刷新页面使 Cookie 生效
+   * 3. 访问测试页检查是否弹出登录浮层（等待最多 5 秒）
+   * 4. 若出现登录浮层：展示浏览器窗口，等待人工登录完成，保存 Cookie
+   * 5. 若无登录浮层：直接恢复登录态
    */
   async ensureLogin(context: BrowserContext, page: Page, timeout = 300000): Promise<void> {
-    const testUrl = URLBuilder.buildListUrl(this.host, '', 1, '');
+    // Step 1: 访问 host 主页，确保 Cookie 域已建立
+    await page.goto(this.host, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
+    // Step 2: 加载已保存的 Cookie 并刷新（对应 Python load_cookies + driver.refresh）
     if (fs.existsSync(this.cookieFile)) {
-      // ── 有 Cookie：直接加载后访问测试页，一次导航搞定 ──
       await this.loadCookies(context);
-      await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    } else {
-      // ── 无 Cookie：访问主页等待登录浮层出现 ──
-      await page.goto(this.host, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
     }
 
-    // 快速判断：同时等「登录浮层」和「正常页面元素」，看哪个先出现
-    const needLogin = await this.detectLoginRequired(page);
+    // Step 3: 访问测试页，等待最多 5 秒检查登录浮层是否出现
+    const testUrl = URLBuilder.buildListUrl(this.host, '', 1, '');
+    await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    if (needLogin) {
+    const loginModalVisible = await this.isLoginModalPresent(page, 5000);
+
+    if (loginModalVisible) {
+      // Step 4: 需要人工登录
       console.log('⚠️ 检测到登录浮层，请手动完成登录');
       await setWindowVisible(page, true);   // 将浏览器窗口展示出来
       await this.waitForManualLogin(page, timeout);
@@ -61,32 +59,22 @@ export class AuthManager {
   }
 
   /**
-   * 快速检测是否需要登录
-   *
-   * 用 Promise.race 同时监听两个信号：
-   *   - 登录浮层出现（div.window-login）→ 需要登录
-   *   - 房源列表容器出现（ul.sellListContent 或 .content__list）→ 已登录
-   *
-   * 两者都没出现时，3 秒超时后检查一次 DOM 快照，避免死等。
+   * 检测登录浮层是否出现（对应 Python WebDriverWait presence_of_element_located）
+   * @param page Playwright Page
+   * @param waitMs 最长等待毫秒数（默认 5000）
    */
-  private async detectLoginRequired(page: Page): Promise<boolean> {
+  private async isLoginModalPresent(page: Page, waitMs = 5000): Promise<boolean> {
     try {
-      const result = await Promise.race([
-        page.waitForSelector('div.window-login', { timeout: 3000, state: 'attached' })
-          .then(() => 'login' as const),
-        page.waitForSelector('ul.sellListContent, .content__list', { timeout: 3000, state: 'attached' })
-          .then(() => 'ok' as const),
-      ]);
-      return result === 'login';
+      await page.waitForSelector('div.window-login', { timeout: waitMs, state: 'attached' });
+      return true;
     } catch {
-      // 两个选择器都没出现（超时）：做一次 DOM 快照检查
-      const modal = await page.$('div.window-login');
-      return !!modal;
+      return false;
     }
   }
 
   /**
-   * 等待人工完成登录（轮询检测登录浮层是否消失）
+   * 等待人工完成登录（对应 Python _manual_login / waitForManualLogin）
+   * 轮询检测登录浮层是否消失
    */
   private async waitForManualLogin(page: Page, timeout: number): Promise<void> {
     const POLL_MS = 3000;
@@ -112,7 +100,6 @@ export class AuthManager {
 
   /**
    * 加载 Cookie（对应 Python _load_cookies）
-   * Playwright 的 addCookies 依赖 cookie.domain 字段，无需事先导航到该域
    */
   private async loadCookies(context: BrowserContext): Promise<void> {
     try {
