@@ -22,11 +22,11 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* 标题栏 */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3 shadow-sm">
-        <span className="text-2xl">🏡</span>
-        <h1 className="text-lg font-bold text-gray-800">贝壳找房爬虫</h1>
-        <span className="text-xs text-gray-400 ml-auto">TypeScript + Playwright + Electron</span>
+      {/* 标题栏（drag-region 使 Electron 窗口可拖动，pl-20 为 macOS 交通灯按钮留空间） */}
+      <header className="drag-region bg-white border-b border-gray-200 pl-20 pr-6 py-3 flex items-center gap-3 shadow-sm select-none">
+        <span className="no-drag text-2xl">🏡</span>
+        <h1 className="no-drag text-lg font-bold text-gray-800">贝壳找房爬虫</h1>
+        <span className="no-drag text-xs text-gray-400 ml-auto">TypeScript + Playwright + Electron</span>
       </header>
 
       {/* 导航标签 */}

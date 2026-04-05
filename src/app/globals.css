@@ -85,3 +85,14 @@ body {
 .log-info {
   color: #89b4fa;
 }
+
+/* Electron 窗口拖动区域 */
+.drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

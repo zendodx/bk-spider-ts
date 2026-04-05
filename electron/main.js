@@ -132,10 +132,10 @@ function startNextServer() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 1000,
-    minHeight: 600,
+    width: 1500,
+    height: 900,
+    minWidth: 1050,
+    minHeight: 700,
     title: '贝壳找房爬虫',
     // 隐藏默认标题栏（使用自定义）
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
