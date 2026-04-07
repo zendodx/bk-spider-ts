@@ -1,21 +1,18 @@
 /**
  * 认证与 Cookie 管理
  * 对应原 Python 项目 core/auth.py
- * 使用 Playwright BrowserContext storageState 替代 pickle
+ * Cookie 持久化改为存储在 SQLite（bk_cookie 表）中
  */
 
-import fs from 'fs';
-import path from 'path';
 import { BrowserContext, Page } from 'playwright';
 import { URLBuilder } from './url-builder';
 import { setWindowVisible } from './driver';
+import { getDb } from '../db/database';
 
 export class AuthManager {
-  private cookieFile: string;
   private host: string;
 
-  constructor(cookieFile: string, host: string) {
-    this.cookieFile = cookieFile;
+  constructor(host: string) {
     this.host = host;
   }
 
@@ -33,9 +30,9 @@ export class AuthManager {
     // Step 1: 访问 host 主页，确保 Cookie 域已建立
     await page.goto(this.host, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // Step 2: 加载已保存的 Cookie 并刷新（对应 Python load_cookies + driver.refresh）
-    if (fs.existsSync(this.cookieFile)) {
-      await this.loadCookies(context);
+    // Step 2: 加载已保存的 Cookie 并刷新
+    const hasCookie = await this.loadCookies(context);
+    if (hasCookie) {
       await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
     }
 
@@ -48,20 +45,18 @@ export class AuthManager {
     if (loginModalVisible) {
       // Step 4: 需要人工登录
       console.log('⚠️ 检测到登录浮层，请手动完成登录');
-      await setWindowVisible(page, true);   // 将浏览器窗口展示出来
+      await setWindowVisible(page, true);
       await this.waitForManualLogin(page, timeout);
       await this.saveCookies(context);
-      await setWindowVisible(page, false);  // 登录完成，将窗口移回屏幕外
-      console.log('✓ 登录成功，Cookie 已保存');
+      await setWindowVisible(page, false);
+      console.log('✓ 登录成功，Cookie 已保存至数据库');
     } else {
       console.log('✓ 已恢复登录态');
     }
   }
 
   /**
-   * 检测登录浮层是否出现（对应 Python WebDriverWait presence_of_element_located）
-   * @param page Playwright Page
-   * @param waitMs 最长等待毫秒数（默认 5000）
+   * 检测登录浮层是否出现
    */
   private async isLoginModalPresent(page: Page, waitMs = 5000): Promise<boolean> {
     try {
@@ -73,8 +68,7 @@ export class AuthManager {
   }
 
   /**
-   * 等待人工完成登录（对应 Python _manual_login / waitForManualLogin）
-   * 轮询检测登录浮层是否消失
+   * 等待人工完成登录
    */
   private async waitForManualLogin(page: Page, timeout: number): Promise<void> {
     const POLL_MS = 3000;
@@ -85,7 +79,6 @@ export class AuthManager {
     while (Date.now() - startTime < timeout) {
       await page.waitForTimeout(POLL_MS);
 
-      // 登录浮层消失 → 登录成功
       const stillVisible = await page.$('div.window-login');
       if (!stillVisible) {
         return;
@@ -99,33 +92,49 @@ export class AuthManager {
   }
 
   /**
-   * 加载 Cookie（对应 Python _load_cookies）
+   * 从 SQLite 加载 Cookie
+   * @returns 是否成功加载到 Cookie
    */
-  private async loadCookies(context: BrowserContext): Promise<void> {
+  private async loadCookies(context: BrowserContext): Promise<boolean> {
     try {
-      const data = JSON.parse(fs.readFileSync(this.cookieFile, 'utf-8'));
+      const db = getDb();
+      const row = db
+        .prepare('SELECT cookie FROM bk_cookie WHERE host = ? LIMIT 1')
+        .get(this.host) as { cookie: string } | undefined;
+
+      if (!row?.cookie) return false;
+
+      const data = JSON.parse(row.cookie);
       if (data.cookies && Array.isArray(data.cookies)) {
-        // 过滤掉可能导致兼容性问题的 sameSite 字段（对应 Python 的 del c["sameSite"]）
         const cleaned = data.cookies.map((c: Record<string, unknown>) => {
           const { sameSite: _sameSite, ...rest } = c;
           return rest;
         });
         await context.addCookies(cleaned);
+        return true;
       }
+      return false;
     } catch {
       console.warn('加载 Cookie 失败，将重新登录');
+      return false;
     }
   }
 
   /**
-   * 保存 Cookie（对应 Python _save_cookies）
+   * 将当前 Cookie 保存到 SQLite（UPSERT）
    */
   private async saveCookies(context: BrowserContext): Promise<void> {
     const cookies = await context.cookies();
-    const dir = path.dirname(this.cookieFile);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(this.cookieFile, JSON.stringify({ cookies }, null, 2), 'utf-8');
+    const cookieJson = JSON.stringify({ cookies });
+    const db = getDb();
+    const now = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
+
+    db.prepare(`
+      INSERT INTO bk_cookie (host, cookie, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(host) DO UPDATE SET
+        cookie     = excluded.cookie,
+        updated_at = excluded.updated_at
+    `).run(this.host, cookieJson, now, now);
   }
 }

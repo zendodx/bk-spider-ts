@@ -5,8 +5,8 @@
  */
 
 import { NextRequest } from 'next/server';
-import { getPool } from '@/lib/db/database';
-import { getDBConfig } from '@/lib/settings';
+import { getDb } from '@/lib/db/database';
+import { getDBPath } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -32,34 +32,35 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const pool = getPool(getDBConfig());
+    const db = getDb(getDBPath());
 
     // 每天只保留最新一条（crawl_time 最大），按日期倒序
+    // SQLite 使用 strftime 和 date() 函数替代 MySQL 的 DATE_FORMAT / DATE
     const sql = `
       SELECT
         t.id,
-        DATE_FORMAT(t.crawl_time, '%Y-%m-%d')       AS crawl_date,
-        DATE_FORMAT(t.crawl_time, '%Y-%m-%d %H:%i') AS crawl_time,
+        strftime('%Y-%m-%d', t.crawl_time)       AS crawl_date,
+        strftime('%Y-%m-%d %H:%M', t.crawl_time) AS crawl_time,
         t.unit_price,
         t.total_price,
         t.follow_count
       FROM house_listings t
       INNER JOIN (
-        SELECT DATE(crawl_time) AS d, MAX(crawl_time) AS max_crawl
+        SELECT date(crawl_time) AS d, MAX(crawl_time) AS max_crawl
         FROM house_listings
         WHERE detail_url = ? AND is_deleted = 0
-        GROUP BY DATE(crawl_time)
+        GROUP BY date(crawl_time)
       ) dedup
-        ON DATE(t.crawl_time) = dedup.d
+        ON date(t.crawl_time) = dedup.d
        AND t.crawl_time = dedup.max_crawl
       WHERE t.detail_url = ? AND t.is_deleted = 0
       ORDER BY t.crawl_time DESC
       LIMIT 365
     `;
 
-    const [rows] = await pool.query(sql, [detailUrl, detailUrl]) as any;
+    const rows = db.prepare(sql).all(detailUrl, detailUrl) as PriceHistoryRow[];
 
-    return Response.json({ success: true, data: rows as PriceHistoryRow[] });
+    return Response.json({ success: true, data: rows });
   } catch (e) {
     return Response.json({ success: false, error: String(e), data: [] }, { status: 500 });
   }

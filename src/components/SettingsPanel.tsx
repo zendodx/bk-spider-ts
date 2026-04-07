@@ -15,11 +15,7 @@ interface Settings {
   exportExcel: boolean;
   exportCsv: boolean;
   dataDir: string;
-  dbHost: string;
-  dbPort: number;
-  dbUser: string;
-  dbPassword: string;
-  dbName: string;
+  dbPath: string;
 }
 
 interface MappingEntry {
@@ -41,11 +37,7 @@ export default function SettingsPanel() {
     exportExcel: true,
     exportCsv: true,
     dataDir: '',
-    dbHost: 'localhost',
-    dbPort: 3306,
-    dbUser: 'root',
-    dbPassword: 'root',
-    dbName: 'bk_spider',
+    dbPath: '',
   });
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [mappingEntries, setMappingEntries] = useState<MappingEntry[]>([]);
@@ -88,13 +80,7 @@ export default function SettingsPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          config: {
-            host: settings.dbHost,
-            port: settings.dbPort,
-            user: settings.dbUser,
-            password: settings.dbPassword,
-            database: settings.dbName,
-          },
+          dbPath: settings.dbPath || undefined,
         }),
       });
       const data = await res.json();
@@ -162,32 +148,15 @@ export default function SettingsPanel() {
 
         {/* 数据库配置 */}
         <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <h3 className="text-sm font-bold text-gray-800 mb-4">🗄️ 数据库配置（MySQL）</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <InputField
-              label="主机" value={settings.dbHost}
-              onChange={v => setSettings(p => ({ ...p, dbHost: v }))}
-              placeholder="localhost"
-            />
-            <InputField
-              label="端口" value={settings.dbPort} type="number"
-              onChange={v => setSettings(p => ({ ...p, dbPort: parseInt(v) || 3306 }))}
-            />
-            <InputField
-              label="用户名" value={settings.dbUser}
-              onChange={v => setSettings(p => ({ ...p, dbUser: v }))}
-            />
-            <InputField
-              label="密码" value={settings.dbPassword} type="password"
-              onChange={v => setSettings(p => ({ ...p, dbPassword: v }))}
-            />
-            <InputField
-              label="数据库名" value={settings.dbName}
-              onChange={v => setSettings(p => ({ ...p, dbName: v }))}
-              className="col-span-2"
-            />
-          </div>
-          <div className="mt-3 flex items-center gap-3">
+          <h3 className="text-sm font-bold text-gray-800 mb-4">🗄️ 数据库配置（SQLite）</h3>
+          <InputField
+            label="数据库文件路径"
+            value={settings.dbPath}
+            onChange={v => setSettings(p => ({ ...p, dbPath: v }))}
+            placeholder="默认: ~/bk_spider_data/bk_spider.db"
+            className="mb-3"
+          />
+          <div className="flex items-center gap-3">
             <button
               onClick={testDbConnection}
               disabled={dbStatus.testing}

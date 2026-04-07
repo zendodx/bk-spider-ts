@@ -11,9 +11,9 @@ import { DataTransformer, CITY_MAPPING, JINAN_DISTRICTS } from '@/lib/spider/dat
 import { BeikeSpider } from '@/lib/spider/spider';
 import { AuthManager } from '@/lib/spider/auth';
 import { HouseRepository } from '@/lib/db/repository';
-import { getPool, initDatabase } from '@/lib/db/database';
+import { getDb, initDatabase } from '@/lib/db/database';
 import { DataExporter } from '@/lib/exporter';
-import { getDataDir, getCookieFile, getDBConfig } from '@/lib/settings';
+import { getDataDir, getDBPath } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
           maxEmptyPages = 1,
           exportCsv = true,
           dataDir,
-          dbConfig: dbCfg,
+          dbPath: dbPathParam,
           blockResources = false,
           captchaTimeoutMinutes = 10,
         } = params;
@@ -80,15 +80,15 @@ export async function POST(request: NextRequest) {
         sendLog(`速度模式: ${speedMode}`);
 
         // 初始化数据库
-        const finalDbConfig = dbCfg || getDefaultDbConfig();
+        const finalDbPath = dbPathParam || getDBPath();
         try {
-          await initDatabase(finalDbConfig);
+          await initDatabase(finalDbPath);
           sendLog('✓ 数据库初始化完成');
         } catch (e) {
           sendLog(`⚠ 数据库初始化失败: ${e} (将跳过数据库保存)`);
         }
 
-        const pool = getPool(finalDbConfig);
+        const db = getDb(finalDbPath);
 
         // 启动浏览器
         sendLog('正在启动浏览器...');
@@ -102,14 +102,13 @@ export async function POST(request: NextRequest) {
         try {
           // 认证
           sendLog('正在进行身份认证...');
-          const cookieFile = getCookieFile(host);
-          const auth = new AuthManager(cookieFile, host);
+          const auth = new AuthManager(host);
           await auth.ensureLogin(context, page);
           sendLog('✓ 身份认证完成');
 
           // 初始化组件
           const parser = new HouseParser(pageWait, speedController, captchaTimeoutMinutes * 60000);
-          const repository = new HouseRepository(pool);
+          const repository = new HouseRepository(db);
           const transformer = new DataTransformer(CITY_MAPPING, JINAN_DISTRICTS);
           const outputDir = dataDir || getDataDir();
           const exporter = new DataExporter(outputDir);
@@ -196,8 +195,4 @@ export async function DELETE() {
     return Response.json({ success: true, message: '爬虫停止指令已发送' });
   }
   return Response.json({ success: false, message: '当前没有运行中的爬虫' });
-}
-
-function getDefaultDbConfig() {
-  return getDBConfig();
 }

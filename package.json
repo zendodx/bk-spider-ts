@@ -18,31 +18,32 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "electron-log": "^5.1.5",
+    "electron-store": "^8.2.0",
     "next": "^14.2.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "playwright": "^1.44.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "mysql2": "^3.9.7",
-    "xlsx": "^0.18.5",
-    "electron-store": "^8.2.0",
-    "electron-log": "^5.1.5"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.12.7",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.0",
-    "typescript": "^5.4.5",
-    "tailwindcss": "^3.4.3",
     "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.38",
+    "concurrently": "^8.2.2",
     "electron": "^30.0.2",
     "electron-builder": "^24.13.3",
-    "concurrently": "^8.2.2",
-    "wait-on": "^7.2.0",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.3"
+    "eslint-config-next": "^14.2.3",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.4.5",
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.bkspider.app",
@@ -68,17 +69,23 @@
       {
         "from": "resources",
         "to": "resources",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": ".next/static",
         "to": "app/.next/static",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "public",
         "to": "app/public",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "afterPack": "scripts/after-install.js",
@@ -103,8 +110,17 @@
     },
     "dmg": {
       "contents": [
-        { "x": 410, "y": 150, "type": "link", "path": "/Applications" },
-        { "x": 130, "y": 150, "type": "file" }
+        {
+          "x": 410,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 150,
+          "type": "file"
+        }
       ]
     }
   }

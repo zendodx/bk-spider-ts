@@ -1,74 +1,63 @@
 /**
- * MySQL 数据库连接管理
- * 使用 mysql2/promise 替代 SQLAlchemy
+ * SQLite 数据库连接管理
+ * 使用 better-sqlite3 替代 mysql2
  */
 
-import mysql from 'mysql2/promise';
+import Database from 'better-sqlite3';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 
-let pool: mysql.Pool | null = null;
+let db: Database.Database | null = null;
 
-export interface DBConfig {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-}
-
-export function getDefaultConfig(): DBConfig {
-  return {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '3306', 10),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'root',
-    database: process.env.DB_NAME || 'bk_spider',
-  };
+/**
+ * 获取 SQLite 数据库文件路径
+ */
+export function getDefaultDbPath(): string {
+  return process.env.DB_PATH || path.join(os.homedir(), 'bk_spider_data', 'bk_spider.db');
 }
 
 /**
- * 初始化连接池
+ * 获取数据库实例（懒初始化，单例）
  */
-export function initPool(config?: DBConfig): mysql.Pool {
-  const cfg = config || getDefaultConfig();
-
-  pool = mysql.createPool({
-    host: cfg.host,
-    port: cfg.port,
-    user: cfg.user,
-    password: cfg.password,
-    database: cfg.database,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    charset: 'utf8mb4',
-    timezone: '+08:00',
-    dateStrings: true,        // 禁止 mysql2 自动将 DATETIME/DATE 转成 JS Date 对象，保持字符串原样返回
-    supportBigNumbers: true,
-    bigNumberStrings: false,
-  });
-
-  return pool;
-}
-
-/**
- * 获取连接池（懒初始化）
- */
-export function getPool(config?: DBConfig): mysql.Pool {
-  if (!pool) {
-    pool = initPool(config);
+export function getDb(dbPath?: string): Database.Database {
+  if (!db) {
+    const filePath = dbPath || getDefaultDbPath();
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    db = new Database(filePath);
+    // WAL 模式提升并发读写性能
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
   }
-  return pool;
+  return db;
 }
 
 /**
- * 测试数据库连接
+ * 重置数据库实例（用于切换数据库文件路径）
  */
-export async function testConnection(config?: DBConfig): Promise<boolean> {
+export function resetDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
+/**
+ * 测试数据库连接（SQLite 只需尝试打开文件即可）
+ */
+export async function testConnection(dbPath?: string): Promise<boolean> {
   try {
-    const p = getPool(config);
-    const conn = await p.getConnection();
-    await conn.ping();
-    conn.release();
+    const filePath = dbPath || getDefaultDbPath();
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const testDb = new Database(filePath);
+    testDb.pragma('journal_mode = WAL');
+    testDb.close();
     return true;
   } catch {
     return false;
@@ -78,77 +67,71 @@ export async function testConnection(config?: DBConfig): Promise<boolean> {
 /**
  * 初始化数据库表（如不存在则创建）
  */
-export async function initDatabase(config?: DBConfig): Promise<void> {
-  const p = getPool(config);
+export async function initDatabase(dbPath?: string): Promise<void> {
+  const instance = getDb(dbPath);
 
-  // 创建数据库（如不存在）
-  const tempPool = mysql.createPool({
-    host: config?.host || getDefaultConfig().host,
-    port: config?.port || getDefaultConfig().port,
-    user: config?.user || getDefaultConfig().user,
-    password: config?.password || getDefaultConfig().password,
-    waitForConnections: true,
-    connectionLimit: 1,
-    charset: 'utf8mb4',
-  });
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS house_listings (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      title         TEXT    NOT NULL DEFAULT '',
+      header_image  TEXT,
+      header_image_desc TEXT,
+      province      TEXT    NOT NULL DEFAULT '',
+      city          TEXT    NOT NULL DEFAULT '',
+      district      TEXT    NOT NULL DEFAULT '',
+      community     TEXT    NOT NULL DEFAULT '',
+      community_url TEXT,
+      floor_info    TEXT,
+      build_year    INTEGER,
+      house_type    TEXT,
+      area          REAL,
+      orientation   TEXT,
+      total_price   REAL,
+      unit_price    REAL,
+      tags          TEXT,
+      detail_url    TEXT,
+      follow_count  INTEGER NOT NULL DEFAULT 0,
+      publish_time  TEXT,
+      crawl_time    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      is_deleted    INTEGER NOT NULL DEFAULT 0
+    )
+  `);
 
-  const conn = await tempPool.getConnection();
-  const dbName = config?.database || getDefaultConfig().database;
+  // 创建 house_listings 索引
+  instance.exec(`
+    CREATE INDEX IF NOT EXISTS idx_city_district      ON house_listings (city, district);
+    CREATE INDEX IF NOT EXISTS idx_community          ON house_listings (community);
+    CREATE INDEX IF NOT EXISTS idx_price              ON house_listings (total_price);
+    CREATE INDEX IF NOT EXISTS idx_area               ON house_listings (area);
+    CREATE INDEX IF NOT EXISTS idx_house_type         ON house_listings (house_type);
+    CREATE INDEX IF NOT EXISTS idx_publish_time       ON house_listings (publish_time);
+    CREATE INDEX IF NOT EXISTS idx_crawl_time         ON house_listings (crawl_time);
+    CREATE INDEX IF NOT EXISTS idx_build_year         ON house_listings (build_year);
+    CREATE INDEX IF NOT EXISTS idx_province_city      ON house_listings (province, city, district);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_detail_url_crawl_time ON house_listings (detail_url, crawl_time);
+  `);
 
-  await conn.query(
-    `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
-  );
-  conn.release();
-  await tempPool.end();
-
-  // 创建表
-  await p.query(`
-    CREATE TABLE IF NOT EXISTS \`house_listings\` (
-      \`id\` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-      \`title\` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '标题',
-      \`header_image\` VARCHAR(500) DEFAULT NULL COMMENT '头图URL',
-      \`header_image_desc\` VARCHAR(255) DEFAULT NULL COMMENT '头图描述',
-      \`province\` VARCHAR(50) NOT NULL DEFAULT '' COMMENT '省',
-      \`city\` VARCHAR(50) NOT NULL DEFAULT '' COMMENT '市',
-      \`district\` VARCHAR(50) NOT NULL DEFAULT '' COMMENT '区',
-      \`community\` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '小区名称',
-      \`community_url\` VARCHAR(500) DEFAULT NULL COMMENT '小区链接',
-      \`floor_info\` VARCHAR(50) DEFAULT NULL COMMENT '楼层信息',
-      \`build_year\` YEAR DEFAULT NULL COMMENT '建造年份',
-      \`house_type\` VARCHAR(50) DEFAULT NULL COMMENT '户型',
-      \`area\` DECIMAL(10, 2) DEFAULT NULL COMMENT '面积（平方米）',
-      \`orientation\` VARCHAR(50) DEFAULT NULL COMMENT '朝向',
-      \`total_price\` DECIMAL(12, 2) DEFAULT NULL COMMENT '总价（万元）',
-      \`unit_price\` DECIMAL(10, 4) DEFAULT NULL COMMENT '单价（万元/平方米）',
-      \`tags\` VARCHAR(500) DEFAULT NULL COMMENT '标签',
-      \`detail_url\` VARCHAR(500) DEFAULT NULL COMMENT '详情页URL',
-      \`follow_count\` INT UNSIGNED DEFAULT 0 COMMENT '关注人数',
-      \`publish_time\` DATETIME DEFAULT NULL COMMENT '发布时间',
-      \`crawl_time\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '采集时间',
-      \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-      \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-      \`is_deleted\` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '软删除标记',
-      PRIMARY KEY (\`id\`),
-      KEY \`idx_city_district\` (\`city\`, \`district\`),
-      KEY \`idx_community\` (\`community\`),
-      KEY \`idx_price\` (\`total_price\`),
-      KEY \`idx_area\` (\`area\`),
-      KEY \`idx_house_type\` (\`house_type\`),
-      KEY \`idx_publish_time\` (\`publish_time\`),
-      KEY \`idx_crawl_time\` (\`crawl_time\`),
-      KEY \`idx_build_year\` (\`build_year\`),
-      KEY \`idx_province_city\` (\`province\`, \`city\`, \`district\`),
-      UNIQUE KEY \`idx_detail_url_crawl_time\` (\`detail_url\`, \`crawl_time\`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='房产房源信息表'
+  // Cookie 存储表
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS bk_cookie (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      host       TEXT    NOT NULL DEFAULT '',
+      cookie     TEXT    NOT NULL DEFAULT '',
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bk_cookie_host ON bk_cookie (host);
   `);
 }
 
 /**
- * 关闭连接池
+ * 关闭数据库连接
  */
-export async function closePool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
+export async function closeDb(): Promise<void> {
+  if (db) {
+    db.close();
+    db = null;
   }
 }

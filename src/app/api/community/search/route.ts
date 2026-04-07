@@ -5,8 +5,8 @@
  */
 
 import { NextRequest } from 'next/server';
-import { getPool } from '@/lib/db/database';
-import { getDBConfig } from '@/lib/settings';
+import { getDb } from '@/lib/db/database';
+import { getDBPath } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -17,33 +17,31 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get('keyword')?.trim() ?? '';
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '30', 10), 100);
 
-    const pool = getPool(getDBConfig());
+    const db = getDb(getDBPath());
 
-    let rows: any[];
+    let rows: { community: string }[];
 
     if (keyword) {
-      [rows] = await pool.query(
-        `SELECT DISTINCT community
-         FROM house_listings
-         WHERE is_deleted = 0
-           AND community LIKE ?
-         ORDER BY community
-         LIMIT ?`,
-        [`%${keyword}%`, limit]
-      ) as any;
+      rows = db.prepare(`
+        SELECT DISTINCT community
+        FROM house_listings
+        WHERE is_deleted = 0
+          AND community LIKE ?
+        ORDER BY community
+        LIMIT ?
+      `).all(`%${keyword}%`, limit) as { community: string }[];
     } else {
-      [rows] = await pool.query(
-        `SELECT DISTINCT community
-         FROM house_listings
-         WHERE is_deleted = 0
-           AND community != ''
-         ORDER BY community
-         LIMIT ?`,
-        [limit]
-      ) as any;
+      rows = db.prepare(`
+        SELECT DISTINCT community
+        FROM house_listings
+        WHERE is_deleted = 0
+          AND community != ''
+        ORDER BY community
+        LIMIT ?
+      `).all(limit) as { community: string }[];
     }
 
-    const communities: string[] = rows.map((r: any) => r.community);
+    const communities: string[] = rows.map(r => r.community);
     return Response.json({ success: true, data: communities });
   } catch (e) {
     return Response.json({ success: false, error: String(e), data: [] }, { status: 500 });

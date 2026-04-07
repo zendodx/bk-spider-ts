@@ -1,12 +1,12 @@
 /**
  * 房源列表查询 API
  * GET /api/listings/query?community=xxx&crawlDate=2026-03-24&houseType=3室&excludeBasement=true&excludeLowFloor=true&orderBy=unit_price&order=asc&limit=500
- * crawlDate 为精确日期，查询当天采集的数据（DATE(created_at) = crawlDate）
+ * crawlDate 为精确日期，查询当天采集的数据（date(created_at) = crawlDate）
  */
 
 import { NextRequest } from 'next/server';
-import { getPool } from '@/lib/db/database';
-import { getDBConfig } from '@/lib/settings';
+import { getDb } from '@/lib/db/database';
+import { getDBPath } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const pool = getPool(getDBConfig());
+    const db = getDb(getDBPath());
 
     const conditions: string[] = ['is_deleted = 0'];
     const params: unknown[] = [];
@@ -66,8 +66,8 @@ export async function GET(request: NextRequest) {
     params.push(`%${community}%`);
 
     if (crawlDate) {
-      // 精确匹配某一天：DATE(created_at) = 'YYYY-MM-DD'
-      conditions.push('DATE(created_at) = ?');
+      // SQLite: date(created_at) = 'YYYY-MM-DD'
+      conditions.push("date(created_at) = ?");
       params.push(crawlDate);
     }
 
@@ -94,10 +94,8 @@ export async function GET(request: NextRequest) {
 
     const where = conditions.join(' AND ');
 
-    // 按 detail_url 去重，保留 created_at 最新的那一行：
-    // 1. 子查询：在满足条件的记录中，按 detail_url 分组取最大 created_at
-    // 2. 外层 JOIN 回原表取完整字段
-    // 3. 最外层按用户指定字段排序并分页
+    // 按 detail_url 去重，保留 created_at 最新的那一行
+    // SQLite 兼容写法：使用子查询 + INNER JOIN
     const sql = `
       SELECT
         t.id,
@@ -117,8 +115,8 @@ export async function GET(request: NextRequest) {
         t.tags,
         t.detail_url,
         t.follow_count,
-        DATE_FORMAT(t.publish_time, '%Y-%m-%d')       AS publish_time,
-        DATE_FORMAT(t.created_at, '%Y-%m-%d %H:%i')                                 AS crawl_time
+        strftime('%Y-%m-%d', t.publish_time)      AS publish_time,
+        strftime('%Y-%m-%d %H:%M', t.created_at)  AS crawl_time
       FROM house_listings t
       INNER JOIN (
         SELECT detail_url, MAX(created_at) AS max_created
@@ -134,9 +132,9 @@ export async function GET(request: NextRequest) {
     `;
 
     // 子查询和外层 WHERE 各用一份 params，最后加 limit
-    const [rows] = await pool.query(sql, [...params, ...params, limit]) as any;
+    const rows = db.prepare(sql).all(...params, ...params, limit) as ListingRow[];
 
-    return Response.json({ success: true, data: rows as ListingRow[], total: rows.length });
+    return Response.json({ success: true, data: rows, total: rows.length });
   } catch (e) {
     return Response.json({ success: false, error: String(e), data: [] }, { status: 500 });
   }

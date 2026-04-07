@@ -36,32 +36,13 @@ export function getMappingFile(): string {
   return path.join(getResourcesDir(), 'mapping.json');
 }
 
-/** Cookie 文件路径（按域名区分） */
-export function getCookieFile(host: string): string {
-  const url = new URL(host);
-  return path.join(getResourcesDir(), `${url.hostname}_beike_cookies.json`);
-}
-
 // =====================
-// 数据库配置
+// SQLite 数据库配置
 // =====================
 
-export interface DBConfig {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-}
-
-export function getDBConfig(): DBConfig {
-  return {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '3306', 10),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'root',
-    database: process.env.DB_NAME || 'bk_spider',
-  };
+/** 获取 SQLite 数据库文件路径 */
+export function getDBPath(): string {
+  return process.env.DB_PATH || path.join(os.homedir(), 'bk_spider_data', 'bk_spider.db');
 }
 
 // =====================

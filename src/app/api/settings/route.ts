@@ -24,11 +24,7 @@ interface AppSettings {
   exportExcel: boolean;
   exportCsv: boolean;
   dataDir: string;
-  dbHost: string;
-  dbPort: number;
-  dbUser: string;
-  dbPassword: string;
-  dbName: string;
+  dbPath: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -44,11 +40,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   exportExcel: true,
   exportCsv: true,
   dataDir: path.join(os.homedir(), 'bk_spider_data', '采集数据'),
-  dbHost: 'localhost',
-  dbPort: 3306,
-  dbUser: 'root',
-  dbPassword: 'root',
-  dbName: 'bk_spider',
+  dbPath: path.join(os.homedir(), 'bk_spider_data', 'bk_spider.db'),
 };
 
 export async function GET() {
