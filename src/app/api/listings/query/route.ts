@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
     const houseType      = searchParams.get('houseType')?.trim() ?? '';
     const excludeBasement  = searchParams.get('excludeBasement') !== 'false';
     const excludeLowFloor  = searchParams.get('excludeLowFloor') !== 'false';
+    const excludeTwoFloor  = searchParams.get('excludeTwoFloor') === 'true';
+    const excludeOneFloor  = searchParams.get('excludeOneFloor') === 'true';
     // 排序字段白名单，防注入
     const allowedOrder   = ['unit_price', 'total_price', 'area', 'created_at'];
     const rawOrderBy     = searchParams.get('orderBy')?.trim() ?? 'unit_price';
@@ -80,6 +82,14 @@ export async function GET(request: NextRequest) {
 
     if (excludeLowFloor) {
       conditions.push("floor_info NOT LIKE '%共3%层%'");
+    }
+
+    if (excludeTwoFloor) {
+      conditions.push("floor_info NOT LIKE '%共2%层%'");
+    }
+
+    if (excludeOneFloor) {
+      conditions.push("floor_info NOT LIKE '%共1%层%'");
     }
 
     const where = conditions.join(' AND ');

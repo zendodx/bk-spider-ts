@@ -331,6 +331,8 @@ export default function ListingsPanel() {
   const [houseType, setHouseType]           = useState('');
   const [excludeBasement, setExcludeBasement]   = useState(true);
   const [excludeLowFloor, setExcludeLowFloor]   = useState(true);
+  const [excludeTwoFloor, setExcludeTwoFloor]   = useState(false);
+  const [excludeOneFloor, setExcludeOneFloor]   = useState(false);
   const [sortKey, setSortKey]               = useState('unit_price|asc');
   const [limit, setLimit]                   = useState(500);
 
@@ -401,6 +403,8 @@ export default function ListingsPanel() {
         crawlDate,
         excludeBasement: String(excludeBasement),
         excludeLowFloor: String(excludeLowFloor),
+        excludeTwoFloor: String(excludeTwoFloor),
+        excludeOneFloor: String(excludeOneFloor),
         orderBy,
         order,
         limit: String(limit),
@@ -419,7 +423,7 @@ export default function ListingsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, sortKey, limit]);
+  }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, sortKey, limit]);
 
   // 格式化数值
   const fmtUnit = (v: number | null) => {
@@ -571,6 +575,24 @@ export default function ListingsPanel() {
                 className="text-blue-500"
               />
               <span className="text-sm text-gray-700">排除共3层楼</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={excludeTwoFloor}
+                onChange={e => setExcludeTwoFloor(e.target.checked)}
+                className="text-blue-500"
+              />
+              <span className="text-sm text-gray-700">排除共2层楼</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={excludeOneFloor}
+                onChange={e => setExcludeOneFloor(e.target.checked)}
+                className="text-blue-500"
+              />
+              <span className="text-sm text-gray-700">排除共1层楼</span>
             </label>
           </div>
 

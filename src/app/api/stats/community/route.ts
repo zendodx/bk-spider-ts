@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
     const houseType = searchParams.get('houseType')?.trim() ?? '';
     const excludeBasement = searchParams.get('excludeBasement') !== 'false';   // 默认排除地下室
     const excludeLowFloor = searchParams.get('excludeLowFloor') !== 'false';   // 默认排除共3层
+    const excludeTwoFloor = searchParams.get('excludeTwoFloor') === 'true';   // 默认不排除共2层
+    const excludeOneFloor = searchParams.get('excludeOneFloor') === 'true';   // 默认不排除共1层
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '100', 10), 500);
 
     if (!community) {
@@ -58,6 +60,12 @@ export async function GET(request: NextRequest) {
     }
     if (excludeLowFloor) {
       conditions.push("floor_info NOT LIKE '%共3%层%'");
+    }
+    if (excludeTwoFloor) {
+      conditions.push("floor_info NOT LIKE '%共2%层%'");
+    }
+    if (excludeOneFloor) {
+      conditions.push("floor_info NOT LIKE '%共1%层%'");
     }
 
     const where = conditions.join(' AND ');

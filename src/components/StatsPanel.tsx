@@ -486,6 +486,8 @@ export default function StatsPanel() {
   const [houseType, setHouseType] = useState('');
   const [excludeBasement, setExcludeBasement] = useState(true);
   const [excludeLowFloor, setExcludeLowFloor] = useState(true);
+  const [excludeTwoFloor, setExcludeTwoFloor] = useState(false);
+  const [excludeOneFloor, setExcludeOneFloor] = useState(false);
   const [limit, setLimit] = useState(100);
 
   const [rows, setRows] = useState<StatRow[]>([]);
@@ -548,6 +550,8 @@ export default function StatsPanel() {
         community: community.trim(),
         excludeBasement: String(excludeBasement),
         excludeLowFloor: String(excludeLowFloor),
+        excludeTwoFloor: String(excludeTwoFloor),
+        excludeOneFloor: String(excludeOneFloor),
         limit: String(limit),
       });
       if (houseType) params.set('houseType', houseType);
@@ -566,7 +570,7 @@ export default function StatsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [community, houseType, excludeBasement, excludeLowFloor, limit]);
+  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, limit]);
 
   // 万/平 → 元/平 显示
   const fmtUnitPrice = (v: number | null) => {
@@ -687,6 +691,24 @@ export default function StatsPanel() {
                 className="text-blue-500"
               />
               <span className="text-sm text-gray-700">排除共3层楼</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={excludeTwoFloor}
+                onChange={e => setExcludeTwoFloor(e.target.checked)}
+                className="text-blue-500"
+              />
+              <span className="text-sm text-gray-700">排除共2层楼</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={excludeOneFloor}
+                onChange={e => setExcludeOneFloor(e.target.checked)}
+                className="text-blue-500"
+              />
+              <span className="text-sm text-gray-700">排除共1层楼</span>
             </label>
           </div>
 
