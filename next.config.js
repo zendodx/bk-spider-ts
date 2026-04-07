@@ -15,7 +15,7 @@ const nextConfig = {
       'puppeteer-extra-plugin-stealth',
       'puppeteer-extra-plugin-utils',
       'clone-deep',
-      'mysql2',
+      'better-sqlite3',
     ],
   },
 };

@@ -14,6 +14,11 @@ const { spawn, execSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 
+// Playwright 浏览器存储在用户数据目录，与应用安装包解耦
+// 升级应用后无需重新下载浏览器
+const PLAYWRIGHT_BROWSERS_PATH = path.join(app.getPath('userData'), 'playwright-browsers');
+process.env.PLAYWRIGHT_BROWSERS_PATH = PLAYWRIGHT_BROWSERS_PATH;
+
 // =====================
 // 配置
 // =====================
@@ -110,6 +115,8 @@ function startNextServer() {
       NODE_ENV: 'production',
       // 静态资源目录指向打包后的 public
       NEXT_PUBLIC_BASE_PATH: '',
+      // 告知 Playwright 使用 userData 下的浏览器目录
+      PLAYWRIGHT_BROWSERS_PATH,
     };
 
     nextProcess = spawn(cmd, args, {
@@ -215,6 +222,84 @@ ipcMain.handle('shell:showInFolder', (_, filePath) => {
 });
 
 // =====================
+// Playwright Chromium 自动安装
+// =====================
+
+/**
+ * 检测 Playwright Chromium 是否已安装，若未安装则自动下载。
+ * 浏览器目录由 PLAYWRIGHT_BROWSERS_PATH 环境变量指定（userData 下），
+ * 安装包升级后无需重新下载。
+ */
+function ensureChromium() {
+  return new Promise((resolve) => {
+    // 检查浏览器目录是否存在 chromium-* 子目录
+    const browsersPath = PLAYWRIGHT_BROWSERS_PATH;
+    let alreadyInstalled = false;
+
+    if (fs.existsSync(browsersPath)) {
+      const entries = fs.readdirSync(browsersPath);
+      alreadyInstalled = entries.some(e => e.startsWith('chromium'));
+    }
+
+    if (alreadyInstalled) {
+      console.log('[Electron] Chromium 已就绪');
+      resolve();
+      return;
+    }
+
+    console.log('[Electron] 首次运行，正在下载 Chromium 浏览器（约 150MB）...');
+
+    // 找到 playwright CLI：优先使用打包内的，否则用系统 npx
+    const isWin = process.platform === 'win32';
+    let playwrightCli = null;
+
+    // 打包后路径：Resources/app/.next/standalone/node_modules/playwright/cli.js
+    const standaloneCliPath = path.join(
+      RESOURCES_PATH, 'app', '.next', 'standalone',
+      'node_modules', 'playwright', 'cli.js'
+    );
+    // 开发模式路径
+    const devCliPath = path.join(__dirname, '..', 'node_modules', 'playwright', 'cli.js');
+
+    let cmd, args;
+    if (fs.existsSync(standaloneCliPath)) {
+      cmd = process.execPath;
+      args = [standaloneCliPath, 'install', 'chromium'];
+    } else if (fs.existsSync(devCliPath)) {
+      cmd = process.execPath;
+      args = [devCliPath, 'install', 'chromium'];
+    } else {
+      // 兜底：用系统 npx
+      cmd = isWin ? 'npx.cmd' : 'npx';
+      args = ['playwright', 'install', 'chromium'];
+    }
+
+    const child = spawn(cmd, args, {
+      stdio: 'inherit',
+      shell: isWin,
+      env: {
+        ...process.env,
+        PLAYWRIGHT_BROWSERS_PATH: browsersPath,
+      },
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        console.log('[Electron] Chromium 下载完成');
+      } else {
+        console.warn(`[Electron] Chromium 下载失败（退出码: ${code}），爬虫功能可能不可用`);
+      }
+      resolve();
+    });
+
+    child.on('error', (err) => {
+      console.warn('[Electron] Chromium 下载出错:', err.message);
+      resolve();
+    });
+  });
+}
+
+// =====================
 // 应用生命周期
 // =====================
 
@@ -222,6 +307,8 @@ app.whenReady().then(async () => {
   try {
     // 在开发模式下，Next.js 已经独立运行
     if (!IS_DEV) {
+      // 确保 Chromium 就绪（首次安装时自动下载）
+      await ensureChromium();
       await startNextServer();
     } else {
       // 开发模式：等待外部 Next.js 服务
