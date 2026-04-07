@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 
 type LoanType = 'commercial' | 'provident' | 'combined';
 type RepayType = 'equal_payment' | 'equal_principal';
@@ -121,6 +121,100 @@ function ResultCard({
   );
 }
 
+// ─── 提前还款计算 ────────────────────────────────────────────
+type EarlyRepayMode = 'shorten' | 'reduce'; // 缩短年限 | 减少月供
+
+interface EarlyRepayResult {
+  // 提前还款后
+  afterTotalPayment: number;   // 提前还款后总还款额（含提前还款额）
+  afterTotalInterest: number;  // 提前还款后总利息
+  afterMonthlyPayment: number; // 提前还款后月供（reduce模式）
+  afterMonths: number;         // 提前还款后剩余期数
+  // 节省
+  savedInterest: number;       // 节省利息
+  savedMonths: number;         // 缩短月数
+}
+
+function calcEarlyRepay(
+  originalPrincipal: number,  // 原始贷款本金（元）
+  annualRate: number,         // 年利率（%）
+  totalMonths: number,        // 原始贷款总期数
+  repayType: RepayType,
+  earlyMonth: number,         // 第几期后提前还款（从1开始）
+  earlyAmount: number,        // 提前还款额（元）
+  mode: EarlyRepayMode,
+): EarlyRepayResult | null {
+  if (originalPrincipal <= 0 || totalMonths <= 0 || earlyMonth <= 0 || earlyAmount <= 0) return null;
+  if (earlyMonth >= totalMonths) return null;
+
+  // 1. 还清 earlyMonth 期后的剩余本金
+  const orig = calcLoan(originalPrincipal, annualRate, totalMonths, repayType);
+  const remainingBeforeEarly = orig.schedule[earlyMonth - 1]?.remaining ?? 0;
+
+  // 还款额不能超过剩余本金
+  const actualEarlyAmount = Math.min(earlyAmount, remainingBeforeEarly);
+  const newPrincipal = remainingBeforeEarly - actualEarlyAmount;
+  if (newPrincipal <= 0) {
+    // 直接还清
+    const paidBefore = orig.schedule.slice(0, earlyMonth).reduce((s, r) => s + r.payment, 0);
+    return {
+      afterTotalPayment: paidBefore + actualEarlyAmount,
+      afterTotalInterest: paidBefore + actualEarlyAmount - originalPrincipal,
+      afterMonthlyPayment: 0,
+      afterMonths: 0,
+      savedInterest: orig.totalInterest - (paidBefore + actualEarlyAmount - originalPrincipal),
+      savedMonths: totalMonths - earlyMonth,
+    };
+  }
+
+  const remainingMonths = totalMonths - earlyMonth;
+  const r = annualRate / 100 / 12;
+
+  let afterMonthlyPayment: number;
+  let afterMonths: number;
+  let afterInterest: number;
+
+  if (mode === 'shorten') {
+    // 缩短年限：月供保持原月供不变
+    const origMonthly = orig.schedule[earlyMonth]?.payment ?? orig.monthlyPayment;
+    if (annualRate === 0) {
+      afterMonths = Math.ceil(newPrincipal / origMonthly);
+      afterInterest = 0;
+    } else {
+      // 用原月供计算能还清所需月数：n = -ln(1 - P*r/mp) / ln(1+r)
+      const ratio = newPrincipal * r / origMonthly;
+      if (ratio >= 1) {
+        // 月供太低还不完，fallback 到原剩余期数
+        afterMonths = remainingMonths;
+        afterInterest = calcLoan(newPrincipal, annualRate, remainingMonths, repayType).totalInterest;
+      } else {
+        afterMonths = Math.ceil(-Math.log(1 - ratio) / Math.log(1 + r));
+        afterInterest = origMonthly * afterMonths - newPrincipal;
+      }
+    }
+    afterMonthlyPayment = origMonthly;
+  } else {
+    // 减少月供：期数不变
+    afterMonths = remainingMonths;
+    const after = calcLoan(newPrincipal, annualRate, remainingMonths, repayType);
+    afterMonthlyPayment = after.monthlyPayment;
+    afterInterest = after.totalInterest;
+  }
+
+  const paidBefore = orig.schedule.slice(0, earlyMonth).reduce((s, r) => s + r.payment, 0);
+  const afterTotalPayment   = paidBefore + actualEarlyAmount + afterMonthlyPayment * afterMonths;
+  const afterTotalInterest  = afterTotalPayment - originalPrincipal;
+
+  return {
+    afterTotalPayment,
+    afterTotalInterest,
+    afterMonthlyPayment,
+    afterMonths,
+    savedInterest: orig.totalInterest - afterTotalInterest,
+    savedMonths: remainingMonths - afterMonths,
+  };
+}
+
 export default function LoanPanel() {
   const [loanType, setLoanType]   = useState<LoanType>('commercial');
   const [repayType, setRepayType] = useState<RepayType>('equal_payment');
@@ -138,6 +232,12 @@ export default function LoanPanel() {
   const [combCommYears, setCombCommYears]   = useState(30);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showAll, setShowAll]           = useState(false);
+
+  // ── 提前还款状态 ──
+  const [showEarly, setShowEarly]         = useState(false);
+  const [earlyMonth, setEarlyMonth]       = useState(36);     // 第几期后还
+  const [earlyAmount, setEarlyAmount]     = useState(20);     // 提前还款额（万）
+  const [earlyMode, setEarlyMode]         = useState<EarlyRepayMode>('shorten');
 
   type CombinedResult = {
     prov: LoanResult; comm: LoanResult; provAmt: number; commAmt: number;
@@ -210,6 +310,21 @@ export default function LoanPanel() {
   const interestPct  = 100 - principalPct;
   const lastPayment  = summary.schedule[summary.schedule.length - 1]?.payment ?? 0;
   const visibleRows  = showAll ? summary.schedule : summary.schedule.slice(0, 24);
+
+  // ── 提前还款计算 ──
+  // 仅支持单笔贷款（商业/公积金），组合贷款暂不支持
+  const earlyResult = useMemo((): EarlyRepayResult | null => {
+    if (!showEarly) return null;
+    const singleResult = commercial ?? provident;
+    if (!singleResult) return null; // 组合贷款暂不支持
+    const principal = actualLoanAmount * 10000;
+    const rate = loanType === 'provident' ? provRate : commRate;
+    const months = loanType === 'provident' ? provYears * 12 : commYears * 12;
+    return calcEarlyRepay(principal, rate, months, repayType, earlyMonth, earlyAmount * 10000, earlyMode);
+  }, [showEarly, commercial, provident, actualLoanAmount, loanType, provRate, commRate,
+      provYears, commYears, repayType, earlyMonth, earlyAmount, earlyMode]);
+
+  const handleToggleEarly = useCallback(() => setShowEarly(v => !v), []);
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
@@ -454,6 +569,163 @@ export default function LoanPanel() {
             )}
           </div>
         </div>
+
+        {/* ── 提前还款计算器 ── */}
+        {summary.schedule.length > 0 && loanType !== 'combined' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div
+              className="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100"
+              onClick={handleToggleEarly}
+            >
+              <h3 className="text-sm font-semibold text-gray-700">
+                💰 提前还款计算
+                <span className="ml-2 text-xs font-normal text-gray-400">计算一次性提前偿还部分本金后的节省效果</span>
+              </h3>
+              <span className="text-gray-400 text-sm">{showEarly ? '▲ 收起' : '▼ 展开'}</span>
+            </div>
+
+            {showEarly && (
+              <div className="p-5 space-y-5">
+                {/* 输入区 */}
+                <div className="grid grid-cols-3 gap-4">
+                  <Field
+                    label="还款期数后提前还款" unit="期"
+                    value={earlyMonth} onChange={setEarlyMonth}
+                    min={1} max={summary.schedule.length - 1} step={1}
+                    note={`第 ${earlyMonth} 期还完后，剩余本金约 ${fmtWan(summary.schedule[earlyMonth - 1]?.remaining ?? 0)}`}
+                  />
+                  <Field
+                    label="提前还款金额" unit="万元"
+                    value={earlyAmount} onChange={setEarlyAmount}
+                    min={1} max={10000} step={1}
+                    note={`最多可还 ${fmt((summary.schedule[earlyMonth - 1]?.remaining ?? 0) / 10000, 1)} 万（全部还清）`}
+                  />
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-2">还款后方式</label>
+                    <div className="space-y-1.5">
+                      {([{ v: 'shorten', label: '缩短年限', desc: '月供不变，提前还清' }, { v: 'reduce', label: '减少月供', desc: '年限不变，月供降低' }] as { v: EarlyRepayMode; label: string; desc: string }[]).map(({ v, label, desc }) => (
+                        <label key={v} className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border text-xs transition-colors ${earlyMode === v ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                          <input type="radio" name="earlyMode" value={v} checked={earlyMode === v} onChange={() => setEarlyMode(v)} className="flex-shrink-0" />
+                          <span><strong>{label}</strong>：{desc}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 结果区 */}
+                {earlyResult ? (
+                  <>
+                    {/* 节省对比 */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* 提前还款前 */}
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <div className="text-xs font-semibold text-gray-500 mb-3 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
+                          不提前还款
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">还款总额</span>
+                            <span className="font-semibold text-gray-700">{fmtWan(summary.totalPayment)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">利息总额</span>
+                            <span className="font-semibold text-red-500">{fmtWan(summary.totalInterest)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">还款期数</span>
+                            <span className="font-semibold text-gray-700">{summary.schedule.length} 期</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">月供</span>
+                            <span className="font-semibold text-gray-700">¥{fmt(summary.firstPayment)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 提前还款后 */}
+                      <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+                        <div className="text-xs font-semibold text-green-600 mb-3 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                          第 {earlyMonth} 期后提前还 {earlyAmount} 万
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">还款总额</span>
+                            <span className="font-semibold text-gray-700">{fmtWan(earlyResult.afterTotalPayment)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">利息总额</span>
+                            <span className="font-semibold text-red-500">{fmtWan(earlyResult.afterTotalInterest)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">还款期数</span>
+                            <span className="font-semibold text-gray-700">{earlyMonth + earlyResult.afterMonths} 期{earlyResult.afterMonths === 0 ? '（直接还清）' : ''}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">{earlyMode === 'reduce' ? '新月供' : '月供不变'}</span>
+                            <span className="font-semibold text-gray-700">
+                              {earlyResult.afterMonths > 0 ? `¥${fmt(earlyResult.afterMonthlyPayment)}` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 节省高亮 */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                        <div className="text-xs text-green-600 font-medium mb-1">💰 节省利息</div>
+                        <div className="text-lg font-bold text-green-700">{fmtWan(Math.max(earlyResult.savedInterest, 0))}</div>
+                        <div className="text-xs text-green-500 mt-0.5">
+                          节省 {summary.totalInterest > 0 ? fmt(Math.max(earlyResult.savedInterest, 0) / summary.totalInterest * 100, 1) : '0'}%
+                        </div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
+                        <div className="text-xs text-blue-600 font-medium mb-1">⏱ 缩短期数</div>
+                        <div className="text-lg font-bold text-blue-700">{Math.max(earlyResult.savedMonths, 0)} 期</div>
+                        <div className="text-xs text-blue-500 mt-0.5">
+                          约 {fmt(Math.max(earlyResult.savedMonths, 0) / 12, 1)} 年
+                        </div>
+                      </div>
+                      <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center">
+                        <div className="text-xs text-orange-600 font-medium mb-1">📉 {earlyMode === 'reduce' ? '月供减少' : '月供不变'}</div>
+                        <div className="text-lg font-bold text-orange-700">
+                          {earlyMode === 'reduce' && earlyResult.afterMonths > 0
+                            ? `-¥${fmt(summary.firstPayment - earlyResult.afterMonthlyPayment)}`
+                            : '缩短' + Math.max(earlyResult.savedMonths, 0) + '期'}
+                        </div>
+                        <div className="text-xs text-orange-500 mt-0.5">
+                          {earlyMode === 'reduce' && earlyResult.afterMonths > 0
+                            ? `¥${fmt(summary.firstPayment)} → ¥${fmt(earlyResult.afterMonthlyPayment)}`
+                            : `${summary.schedule.length} → ${earlyMonth + earlyResult.afterMonths} 期`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 投资回报率参考 */}
+                    {earlyResult.savedInterest > 0 && earlyAmount > 0 && (
+                      <div className="bg-yellow-50 border border-yellow-100 rounded-xl px-4 py-3 text-xs text-yellow-700">
+                        <strong>💡 参考：</strong>
+                        提前还款 {earlyAmount} 万，共节省利息 {fmtWan(earlyResult.savedInterest)}，
+                        相当于这笔钱的年化收益约{' '}
+                        <strong className="text-orange-600">
+                          {fmt(earlyResult.savedInterest / (earlyAmount * 10000) / Math.max(earlyResult.savedMonths / 12, 0.1) * 100, 2)}%
+                        </strong>。
+                        若您有其他理财渠道年化收益高于此值，则不建议提前还款。
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center text-sm text-gray-400 py-4">
+                    请输入有效的提前还款参数
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── 还款计划表 ── */}
         {summary.schedule.length > 0 && (
