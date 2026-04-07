@@ -146,6 +146,7 @@ export default function LoanPanel() {
   const calcResult = useMemo((): {
     downPayment: number; loanAmount: number;
     commercial?: LoanResult; provident?: LoanResult; combined?: CombinedResult;
+    provActualLoan?: number; // 公积金实际可贷金额（可能小于 loanAmount）
   } => {
     const downPayment = housePrice * downPaymentPct / 100;
     const loanAmount  = housePrice - downPayment;
@@ -153,8 +154,9 @@ export default function LoanPanel() {
       return { downPayment, loanAmount, commercial: calcLoan(loanAmount * 10000, commRate, commYears * 12, repayType) };
     }
     if (loanType === 'provident') {
-      const actual = Math.min(loanAmount, provMax);
-      return { downPayment, loanAmount: actual, provident: calcLoan(actual * 10000, provRate, provYears * 12, repayType) };
+      const actualLoan = Math.min(loanAmount, provMax);
+      // loanAmount 保持真实贷款总额用于显示；actualLoan 是公积金实际可贷金额
+      return { downPayment, loanAmount, provident: calcLoan(actualLoan * 10000, provRate, provYears * 12, repayType), provActualLoan: actualLoan };
     }
     const provAmt = Math.min(combProvAmount, loanAmount);
     const commAmt = Math.max(0, loanAmount - provAmt);
@@ -170,7 +172,7 @@ export default function LoanPanel() {
       commRate, commYears, provRate, provYears, provMax,
       combProvAmount, combProvRate, combProvYears, combCommRate, combCommYears]);
 
-  const { loanAmount, downPayment, commercial, provident, combined } = calcResult;
+  const { loanAmount, downPayment, commercial, provident, combined, provActualLoan } = calcResult;
 
   const summary = useMemo(() => {
     if (commercial) {
@@ -202,7 +204,9 @@ export default function LoanPanel() {
     return { firstPayment: 0, totalInterest: 0, totalPayment: 0, schedule: [] as MonthRecord[] };
   }, [commercial, provident, combined]);
 
-  const principalPct = summary.totalPayment > 0 ? loanAmount * 10000 / summary.totalPayment * 100 : 0;
+  // 公积金模式下，实际贷款额可能因额度上限被截断，需用实际贷款额计算占比
+  const actualLoanAmount = loanType === 'provident' && provActualLoan !== undefined ? provActualLoan : loanAmount;
+  const principalPct = summary.totalPayment > 0 ? actualLoanAmount * 10000 / summary.totalPayment * 100 : 0;
   const interestPct  = 100 - principalPct;
   const lastPayment  = summary.schedule[summary.schedule.length - 1]?.payment ?? 0;
   const visibleRows  = showAll ? summary.schedule : summary.schedule.slice(0, 24);
@@ -338,6 +342,9 @@ export default function LoanPanel() {
                 <span>首付 <strong className="text-gray-700">{fmt(downPayment, 1)} 万</strong></span>
                 <span className="text-gray-300">|</span>
                 <span>贷款 <strong className="text-gray-700">{fmt(loanAmount, 1)} 万</strong></span>
+                {loanType === 'provident' && provActualLoan !== undefined && provActualLoan < loanAmount && (
+                  <span className="text-orange-500">（公积金实贷 {fmt(provActualLoan, 1)} 万，受额度上限限制）</span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <ResultCard
@@ -347,7 +354,7 @@ export default function LoanPanel() {
                 />
                 <ResultCard
                   label="还款总额" value={fmtWan(summary.totalPayment)}
-                  sub={`贷款 ${fmt(loanAmount, 1)} 万`} color="orange"
+                  sub={`实贷 ${fmt(loanType === 'provident' && provActualLoan !== undefined ? provActualLoan : loanAmount, 1)} 万`} color="orange"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -356,7 +363,8 @@ export default function LoanPanel() {
                   sub={`占还款 ${fmt(interestPct, 1)}%`} color="red"
                 />
                 <ResultCard
-                  label="本金总额" value={`${fmt(loanAmount, 1)} 万`}
+                  label="本金总额"
+                  value={`${fmt(loanType === 'provident' && provActualLoan !== undefined ? provActualLoan : loanAmount, 1)} 万`}
                   sub={`占还款 ${fmt(principalPct, 1)}%`} color="green"
                 />
               </div>
@@ -410,7 +418,7 @@ export default function LoanPanel() {
                 <div className="flex justify-between text-xs text-gray-500 mb-3">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block" />
-                    本金 {fmt(principalPct, 1)}%（{fmt(loanAmount, 1)} 万）
+                    本金 {fmt(principalPct, 1)}%（{fmt(actualLoanAmount, 1)} 万）
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" />
