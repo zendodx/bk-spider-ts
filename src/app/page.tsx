@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import SpiderPanel from '@/components/SpiderPanel';
 import PredictPanel from '@/components/PredictPanel';
+import LoanPanel from '@/components/LoanPanel';
 import StatsPanel from '@/components/StatsPanel';
 import ListingsPanel from '@/components/ListingsPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 
-type Tab = 'spider' | 'predict' | 'stats' | 'listings' | 'settings';
+type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'settings';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
@@ -22,6 +23,7 @@ export default function Home() {
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'spider', label: '爬虫采集', icon: '🕷️' },
     { id: 'predict', label: '房价预测', icon: '🏠' },
+    { id: 'loan',    label: '贷款计算', icon: '🏦' },
     { id: 'stats', label: '价格统计', icon: '📊' },
     { id: 'listings', label: '房源列表', icon: '🏘️' },
     { id: 'settings', label: '系统设置', icon: '⚙️' },
@@ -60,6 +62,7 @@ export default function Home() {
       <main className="flex-1 overflow-hidden">
         <div className="h-full" style={{ display: activeTab === 'spider'   ? 'block' : 'none' }}><SpiderPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'predict'  ? 'block' : 'none' }}><PredictPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'loan'     ? 'block' : 'none' }}><LoanPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'stats'    ? 'block' : 'none' }}><StatsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'listings' ? 'block' : 'none' }}><ListingsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'settings' ? 'block' : 'none' }}><SettingsPanel /></div>
