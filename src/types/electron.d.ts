@@ -8,6 +8,8 @@ interface ElectronAPI {
   getVersion: () => Promise<string>;
   showInFolder: (filePath: string) => Promise<void>;
   isElectron: boolean;
+  /** 当前操作系统平台，同 Node.js process.platform ('darwin' | 'win32' | 'linux') */
+  platform: string;
 }
 
 declare global {

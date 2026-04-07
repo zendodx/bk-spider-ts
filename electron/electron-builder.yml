@@ -34,7 +34,9 @@ win:
     - target: nsis
       arch:
         - x64
+        - ia32
   icon: public/icon.ico
+  # Windows 下不使用自定义标题栏（保持系统原生标题栏）
 
 linux:
   target:

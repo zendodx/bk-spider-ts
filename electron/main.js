@@ -27,6 +27,26 @@ const RESOURCES_PATH = app.isPackaged
 let mainWindow = null;
 let nextProcess = null;
 
+/**
+ * 跨平台终止进程（含子进程树）
+ * - Windows：taskkill /F /T /PID 强制杀进程树，避免残留子进程占用端口
+ * - macOS/Linux：发送 SIGTERM，子进程由 Node.js 自动清理
+ */
+function killProcess(proc) {
+  if (!proc) return;
+  try {
+    if (process.platform === 'win32') {
+      // /F 强制, /T 包含子进程树
+      execSync(`taskkill /F /T /PID ${proc.pid}`, { stdio: 'ignore' });
+    } else {
+      proc.kill('SIGTERM');
+    }
+  } catch (e) {
+    // 进程可能已经退出，忽略错误
+    console.warn('[Electron] 进程终止时出现异常（可能已退出）:', e.message);
+  }
+}
+
 // =====================
 // 工具函数
 // =====================
@@ -144,8 +164,8 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    // 图标
-    icon: path.join(__dirname, '..', 'public', 'icon.png'),
+    // 图标：Windows 使用 .ico，macOS/Linux 使用 .png
+    icon: path.join(__dirname, '..', 'public', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     backgroundColor: '#f5f6fa',
     show: false, // 等待就绪后再显示
   });
@@ -224,9 +244,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // 停止 Next.js 进程
+  // 停止 Next.js 进程（Windows 用 taskkill 杀整个进程树）
   if (nextProcess) {
-    nextProcess.kill();
+    killProcess(nextProcess);
     nextProcess = null;
   }
 
@@ -237,7 +257,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (nextProcess) {
-    nextProcess.kill();
+    killProcess(nextProcess);
+    nextProcess = null;
   }
 });
 

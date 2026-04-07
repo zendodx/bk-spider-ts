@@ -20,4 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 检测是否运行在 Electron 环境
   isElectron: true,
+
+  // 当前操作系统平台（'darwin' | 'win32' | 'linux'）
+  platform: process.platform,
 });

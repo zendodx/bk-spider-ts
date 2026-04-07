@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import SpiderPanel from '@/components/SpiderPanel';
 import PredictPanel from '@/components/PredictPanel';
 import StatsPanel from '@/components/StatsPanel';
@@ -11,6 +11,13 @@ type Tab = 'spider' | 'predict' | 'stats' | 'listings' | 'settings';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
+  // macOS 下标题栏需要为交通灯按钮留出左侧空间，Windows/Linux 不需要
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    // 通过 preload 暴露的 platform 判断是否是 macOS
+    setIsMac(typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin');
+  }, []);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'spider', label: '爬虫采集', icon: '🕷️' },
@@ -22,8 +29,8 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* 标题栏（drag-region 使 Electron 窗口可拖动，pl-20 为 macOS 交通灯按钮留空间） */}
-      <header className="drag-region bg-white border-b border-gray-200 pl-20 pr-6 py-3 flex items-center gap-3 shadow-sm select-none">
+      {/* 标题栏（drag-region 使 Electron 窗口可拖动；macOS 需 pl-20 为交通灯按钮留空间，Windows/Linux 保持 px-6） */}
+      <header className={`drag-region bg-white border-b border-gray-200 py-3 flex items-center gap-3 shadow-sm select-none ${isMac ? 'pl-20 pr-6' : 'px-6'}`}>
         <span className="no-drag text-2xl">🏡</span>
         <h1 className="no-drag text-lg font-bold text-gray-800">贝壳找房爬虫</h1>
         <span className="no-drag text-xs text-gray-400 ml-auto">TypeScript + Playwright + Electron</span>
