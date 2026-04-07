@@ -266,6 +266,181 @@ function PriceHistoryModal({
   );
 }
 
+// ===== 收藏弹窗组件 =====
+function FavoriteModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: ListingRow;
+  onClose: () => void;
+  onSaved?: () => void;
+}) {
+  const NOTE_TEMPLATE = '- 楼层：\n\n- 装修：\n\n- 楼面：\n\n- 抵押：\n\n- 学区：\n\n- 成交价：';
+  const [note, setNote]       = useState(NOTE_TEMPLATE);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [error, setError]     = useState('');
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+
+  const fmtUnit = (v: number | null) => {
+    if (v == null) return '-';
+    return `${(Number(v) * 10000).toFixed(0)} 元/平`;
+  };
+  const fmtPrice = (v: number | null) => {
+    if (v == null) return '-';
+    return `${Number(v).toFixed(2)} 万`;
+  };
+  const fmtArea = (v: number | null) => {
+    if (v == null) return '-';
+    return `${Number(v).toFixed(1)} ㎡`;
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/favorite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listing: row, note }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSaved(true);
+        onSaved?.();
+        setTimeout(() => onClose(), 800);
+      } else {
+        setError(json.error ?? '收藏失败');
+      }
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const infoItems = [
+    { label: '小区',   value: row.community || '—' },
+    { label: '标题',   value: row.title || '—' },
+    { label: '地区',   value: [row.province, row.city, row.district].filter(Boolean).join(' / ') || '—' },
+    { label: '户型',   value: row.house_type || '—' },
+    { label: '面积',   value: fmtArea(row.area) },
+    { label: '楼层',   value: row.floor_info || '—' },
+    { label: '朝向',   value: row.orientation || '—' },
+    { label: '年份',   value: row.build_year ? String(row.build_year) : '—' },
+    { label: '单价',   value: fmtUnit(row.unit_price), highlight: 'orange' as const },
+    { label: '总价',   value: fmtPrice(row.total_price), highlight: 'blue' as const },
+    { label: '关注',   value: String(row.follow_count ?? 0) },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={handleBackdrop}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[85vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-gray-700">⭐ 收藏房源</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
+          >✕</button>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+          {/* 基本信息卡片 */}
+          <div className="bg-gray-50 rounded-lg px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2">
+            {infoItems.map(item => (
+              <div key={item.label} className="flex flex-col">
+                <span className="text-xs text-gray-400">{item.label}</span>
+                <span className={`text-sm font-medium mt-0.5 ${
+                  item.highlight === 'orange' ? 'text-orange-700' :
+                  item.highlight === 'blue'   ? 'text-blue-700'   :
+                  'text-gray-700'
+                }`}>
+                  {item.value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* 详情链接 */}
+          {row.detail_url && (
+            <div className="text-xs text-gray-400 break-all">
+              <span className="font-medium text-gray-500">详情链接：</span>
+              <a
+                href={row.detail_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:underline"
+              >
+                {row.detail_url}
+              </a>
+            </div>
+          )}
+
+          {/* 备注输入框 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">备注（可选）</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="填写备注，如：价格合适、位置好..."
+              rows={10}
+              maxLength={1000}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-400 resize-none"
+            />
+            <div className="text-right text-xs text-gray-400 mt-0.5">{note.length}/1000</div>
+          </div>
+
+          {/* 错误信息 */}
+          {error && (
+            <div className="px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+              ❌ {error}
+            </div>
+          )}
+        </div>
+
+        {/* 底部按钮 */}
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || saved}
+            className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+              saved
+                ? 'bg-green-500 text-white cursor-default'
+                : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed'
+            }`}
+          >
+            {saved ? '✓ 已收藏' : saving ? '收藏中...' : '⭐ 确认收藏'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== 图片预览弹窗组件 =====
 function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   // 点击遮罩关闭
@@ -354,6 +529,9 @@ export default function ListingsPanel() {
 
   // 价格历史弹窗
   const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
+
+  // 收藏弹窗
+  const [favoriteModal, setFavoriteModal] = useState<ListingRow | null>(null);
 
   // 防抖查询小区候选
   useEffect(() => {
@@ -459,6 +637,14 @@ export default function ListingsPanel() {
           detailUrl={priceHistoryModal.detailUrl}
           title={priceHistoryModal.title}
           onClose={() => setPriceHistoryModal(null)}
+        />
+      )}
+
+      {/* ===== 收藏弹窗 ===== */}
+      {favoriteModal && (
+        <FavoriteModal
+          row={favoriteModal}
+          onClose={() => setFavoriteModal(null)}
         />
       )}
 
@@ -750,7 +936,7 @@ export default function ListingsPanel() {
                       <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{row.follow_count ?? 0}</td>
                       {/* 采集时间 */}
                       <td className="px-4 py-2.5 text-center text-gray-400 whitespace-nowrap">{row.crawl_time}</td>
-                      {/* 操作列：详情链接 + 价格历史 */}
+                      {/* 操作列：详情链接 + 价格历史 + 收藏 */}
                       <td className="px-3 py-2.5 text-center whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
                           {row.detail_url ? (
@@ -772,6 +958,13 @@ export default function ListingsPanel() {
                             title="查看价格历史"
                           >
                             📈
+                          </button>
+                          <button
+                            onClick={() => setFavoriteModal(row)}
+                            className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors"
+                            title="收藏该房源"
+                          >
+                            ⭐
                           </button>
                         </div>
                       </td>

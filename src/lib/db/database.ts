@@ -124,6 +124,34 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_bk_cookie_host ON bk_cookie (host);
   `);
+
+  // 房源收藏表
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS house_favorite (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      title             TEXT    NOT NULL DEFAULT '',
+      header_image      TEXT,
+      header_image_desc TEXT,
+      province          TEXT    NOT NULL DEFAULT '',
+      city              TEXT    NOT NULL DEFAULT '',
+      district          TEXT    NOT NULL DEFAULT '',
+      community         TEXT    NOT NULL DEFAULT '',
+      community_url     TEXT,
+      floor_info        TEXT,
+      build_year        INTEGER,
+      house_type        TEXT,
+      area              REAL,
+      orientation       TEXT,
+      total_price       REAL,
+      unit_price        REAL,
+      detail_url        TEXT,
+      note              TEXT,
+      created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_house_favorite_detail_url ON house_favorite (detail_url);
+    CREATE INDEX IF NOT EXISTS idx_house_favorite_community ON house_favorite (community);
+  `);
 }
 
 /**

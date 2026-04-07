@@ -6,6 +6,29 @@ use bk_spider;
 
 drop table if exists house_listings;
 
+create table `house_favorite`(
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    
+    `title` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '标题',
+    `header_image` VARCHAR(500) DEFAULT NULL COMMENT '头图URL',
+    `header_image_desc` VARCHAR(255) DEFAULT NULL COMMENT '头图描述',
+    
+    `province` VARCHAR(50) NOT NULL DEFAULT '' COMMENT '省',
+    `city` VARCHAR(50) NOT NULL DEFAULT '' COMMENT '市',
+    `district` VARCHAR(50) NOT NULL DEFAULT '' COMMENT '区',
+    
+    `community` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '小区名称',
+    `community_url` VARCHAR(500) DEFAULT NULL COMMENT '小区链接',
+
+    `detail_url` VARCHAR(500) DEFAULT NULL COMMENT '详情页URL',
+
+    `note` VARCHAR(1000) DEFAULT NULL COMMENT '备注',
+
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
+    PRIMARY KEY (`id`)
+)
+
 create table `bk_cookie`(
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `host` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '访问地址',
