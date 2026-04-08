@@ -490,6 +490,11 @@ export default function StatsPanel() {
   const [excludeOneFloor, setExcludeOneFloor] = useState(false);
   const [limit, setLimit] = useState(100);
 
+  // 面积区间（可选）
+  const [areaEnabled, setAreaEnabled] = useState(false);
+  const [areaMin, setAreaMin]         = useState('');
+  const [areaMax, setAreaMax]         = useState('');
+
   const [rows, setRows] = useState<StatRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -555,6 +560,12 @@ export default function StatsPanel() {
         limit: String(limit),
       });
       if (houseType) params.set('houseType', houseType);
+      if (areaEnabled) {
+        const mn = parseFloat(areaMin);
+        const mx = parseFloat(areaMax);
+        if (!isNaN(mn)) params.set('areaMin', String(mn));
+        if (!isNaN(mx)) params.set('areaMax', String(mx));
+      }
 
       const res = await fetch(`/api/stats/community?${params}`);
       const json = await res.json();
@@ -570,7 +581,7 @@ export default function StatsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, limit]);
+  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, limit, areaEnabled, areaMin, areaMax]);
 
   // 万/平 → 元/平 显示
   const fmtUnitPrice = (v: number | null) => {
@@ -669,6 +680,41 @@ export default function StatsPanel() {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+          </div>
+
+          {/* 面积区间 */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-gray-600">面积区间（㎡）</label>
+            <label className="flex items-center gap-1.5 cursor-pointer mb-0.5">
+              <input
+                type="checkbox"
+                checked={areaEnabled}
+                onChange={e => setAreaEnabled(e.target.checked)}
+                className="text-blue-500"
+              />
+              <span className="text-sm text-gray-700">启用面积筛选</span>
+            </label>
+            {areaEnabled && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={areaMin}
+                  onChange={e => setAreaMin(e.target.value)}
+                  placeholder="最小"
+                  min={0}
+                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-gray-400 text-sm">~</span>
+                <input
+                  type="number"
+                  value={areaMax}
+                  onChange={e => setAreaMax(e.target.value)}
+                  placeholder="最大"
+                  min={0}
+                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
           </div>
 
           {/* 过滤选项 */}

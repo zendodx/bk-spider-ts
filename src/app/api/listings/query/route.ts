@@ -43,6 +43,8 @@ export async function GET(request: NextRequest) {
     const excludeLowFloor  = searchParams.get('excludeLowFloor') !== 'false';
     const excludeTwoFloor  = searchParams.get('excludeTwoFloor') === 'true';
     const excludeOneFloor  = searchParams.get('excludeOneFloor') === 'true';
+    const areaMin        = parseFloat(searchParams.get('areaMin') ?? '');
+    const areaMax        = parseFloat(searchParams.get('areaMax') ?? '');
     // 排序字段白名单，防注入
     const allowedOrder   = ['unit_price', 'total_price', 'area', 'created_at'];
     const rawOrderBy     = searchParams.get('orderBy')?.trim() ?? 'unit_price';
@@ -90,6 +92,15 @@ export async function GET(request: NextRequest) {
 
     if (excludeOneFloor) {
       conditions.push("floor_info NOT LIKE '%共1%层%'");
+    }
+
+    if (!isNaN(areaMin)) {
+      conditions.push('area >= ?');
+      params.push(areaMin);
+    }
+    if (!isNaN(areaMax)) {
+      conditions.push('area <= ?');
+      params.push(areaMax);
     }
 
     const where = conditions.join(' AND ');
