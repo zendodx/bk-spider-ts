@@ -386,9 +386,9 @@ export default function FavoritesPanel() {
 
   // 新增：户型、排序、过滤条件
   const [houseType, setHouseType]               = useState('');
-  const [sortKey, setSortKey]                   = useState('created_at|desc');
-  const [excludeBasement, setExcludeBasement]   = useState(false);
-  const [excludeLowFloor, setExcludeLowFloor]   = useState(false);
+  const [sortKey, setSortKey]                   = useState('unit_price|asc');
+  const [excludeBasement, setExcludeBasement]   = useState(true);
+  const [excludeLowFloor, setExcludeLowFloor]   = useState(true);
   const [excludeTwoFloor, setExcludeTwoFloor]   = useState(false);
   const [excludeOneFloor, setExcludeOneFloor]   = useState(false);
 
