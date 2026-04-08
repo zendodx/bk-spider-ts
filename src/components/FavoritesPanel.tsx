@@ -419,6 +419,11 @@ export default function FavoritesPanel() {
   const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
   const [deletingId, setDeletingId]               = useState<number | null>(null);
 
+  // PDF 导出状态
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [includeNote, setIncludeNote] = useState(false);
+
   // 防抖搜索小区候选
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -558,6 +563,61 @@ export default function FavoritesPanel() {
   const fmtUnit  = (v: number | null) => v == null ? '-' : `${(Number(v) * 10000).toFixed(0)}`;
   const fmtPrice = (v: number | null) => v == null ? '-' : Number(v).toFixed(2);
   const fmtArea  = (v: number | null) => v == null ? '-' : Number(v).toFixed(1);
+
+  // ===== 导出 PDF =====
+  const handleExportPdf = useCallback(async () => {
+    if (rows.length === 0) {
+      alert('当前没有可导出的房源数据');
+      return;
+    }
+    setExporting(true);
+    setExportError('');
+    try {
+      // 构建过滤描述
+      const descParts: string[] = [];
+      if (filterCommunity) descParts.push(`小区：${filterCommunity}`);
+      if (houseType) descParts.push(`户型：${houseType}`);
+      if (areaEnabled) {
+        if (areaMin && areaMax) descParts.push(`面积：${areaMin}~${areaMax}㎡`);
+        else if (areaMin) descParts.push(`面积≥${areaMin}㎡`);
+        else if (areaMax) descParts.push(`面积≤${areaMax}㎡`);
+      }
+      const filterDesc = descParts.length > 0
+        ? `筛选条件：${descParts.join('  ·  ')}`
+        : `共 ${rows.length} 套收藏房源`;
+
+      const res = await fetch('/api/favorite/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows, filterDesc, includeNote }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error ?? `HTTP ${res.status}`);
+      }
+
+      // 触发浏览器下载
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const dateStr = new Date()
+        .toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' })
+        .replace(/[: ]/g, '-')
+        .slice(0, 16);
+      a.href     = url;
+      a.download = `收藏房源_${dateStr}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(`导出失败：${e}`);
+    } finally {
+      setExporting(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filterCommunity, houseType, areaEnabled, areaMin, areaMax, includeNote]);
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -760,7 +820,52 @@ export default function FavoritesPanel() {
           >
             🔄
           </button>
+
+          {/* PDF 导出选项：备注 */}
+          <div className="flex flex-col justify-end gap-1">
+            <label className="text-xs font-medium text-gray-600">PDF 选项</label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeNote}
+                onChange={e => setIncludeNote(e.target.checked)}
+                className="text-red-500"
+              />
+              <span className="text-sm text-gray-700">导出备注</span>
+            </label>
+          </div>
+
+          {/* 导出 PDF */}
+          <button
+            onClick={handleExportPdf}
+            disabled={exporting || loading || rows.length === 0}
+            className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            title="将当前筛选结果导出为 PDF 文档"
+          >
+            {exporting ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                生成中...
+              </>
+            ) : '📄 导出 PDF'}
+          </button>
         </div>
+
+        {/* 导出错误提示 */}
+        {exportError && (
+          <div className="mt-2 px-4 py-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+            ❌ {exportError}
+            <button
+              onClick={() => setExportError('')}
+              className="ml-3 text-red-400 hover:text-red-600 underline text-xs"
+            >
+              关闭
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ===== 结果区 ===== */}
