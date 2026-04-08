@@ -128,6 +128,196 @@ function EditNoteModal({
   );
 }
 
+// ===== 价格历史数据类型 =====
+interface PriceHistoryRow {
+  id: number;
+  crawl_date: string;
+  crawl_time: string;
+  unit_price: number | null;
+  total_price: number | null;
+  follow_count: number;
+}
+
+// ===== 趋势箭头 =====
+function TrendArrow({ curr, prev }: { curr: number | null; prev: number | null }) {
+  if (curr == null || prev == null) return null;
+  const diff = Number(curr) - Number(prev);
+  if (Math.abs(diff) < 0.0001) return <span className="text-gray-400 ml-1 text-xs">—</span>;
+  if (diff > 0) return <span className="text-red-500 ml-1 text-xs font-bold">↑</span>;
+  return <span className="text-green-600 ml-1 text-xs font-bold">↓</span>;
+}
+
+// ===== 价格历史弹窗 =====
+function PriceHistoryModal({
+  detailUrl,
+  title,
+  onClose,
+}: {
+  detailUrl: string;
+  title: string;
+  onClose: () => void;
+}) {
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
+  const [rows, setRows]           = useState<PriceHistoryRow[]>([]);
+  const [inputUrl, setInputUrl]   = useState(detailUrl);
+  const [queriedUrl, setQueriedUrl] = useState('');
+
+  const fmtUnit  = (v: number | null) => v == null ? '-' : `${(Number(v) * 10000).toFixed(0)}`;
+  const fmtPrice = (v: number | null) => v == null ? '-' : Number(v).toFixed(2);
+
+  const handleQuery = useCallback(async (url: string) => {
+    const u = url.trim();
+    if (!u) return;
+    setLoading(true);
+    setError('');
+    setRows([]);
+    setQueriedUrl(u);
+    try {
+      const res  = await fetch(`/api/listings/price-history?detailUrl=${encodeURIComponent(u)}`);
+      const json = await res.json();
+      if (json.success) {
+        setRows(json.data ?? []);
+      } else {
+        setError(json.error ?? '查询失败');
+      }
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 首次自动查询
+  useEffect(() => {
+    if (detailUrl) handleQuery(detailUrl);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[85vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-gray-700">📈 价格历史</span>
+            {title && <span className="text-xs text-gray-400 truncate max-w-xs" title={title}>{title}</span>}
+          </div>
+          <button onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none">✕</button>
+        </div>
+
+        {/* URL 查询栏 */}
+        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputUrl}
+              onChange={e => setInputUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleQuery(inputUrl); }}
+              placeholder="输入 detail_url 查询价格历史..."
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+            />
+            <button
+              onClick={() => handleQuery(inputUrl)}
+              disabled={loading}
+              className="px-4 py-1.5 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {loading ? '查询中...' : '🔍 查询'}
+            </button>
+          </div>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto px-4 py-3">
+          {error && (
+            <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">❌ {error}</div>
+          )}
+          {!loading && !error && rows.length === 0 && queriedUrl && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <span className="text-4xl mb-3">📭</span>
+              <p className="text-sm">暂无该房源的价格历史记录</p>
+            </div>
+          )}
+          {!loading && !queriedUrl && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <span className="text-4xl mb-3">🔍</span>
+              <p className="text-sm">输入 detail_url 后点击查询</p>
+            </div>
+          )}
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm">加载中...</span>
+            </div>
+          )}
+          {rows.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-400 mb-2">共 {rows.length} 条记录，按采集日期倒序排列</div>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">#</th>
+                    <th className="px-3 py-2 text-center font-semibold text-gray-600 whitespace-nowrap">采集日期</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">
+                      单价<br /><span className="font-normal text-gray-400">(元/平)</span>
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap bg-blue-50">
+                      总价<br /><span className="font-normal text-gray-400">(万)</span>
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">关注</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rows.map((row, idx) => {
+                    const nextRow = rows[idx + 1] ?? null;
+                    return (
+                      <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2 text-right text-gray-400">{idx + 1}</td>
+                        <td className="px-3 py-2 text-center text-gray-600 whitespace-nowrap font-mono">{row.crawl_date}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
+                          {fmtUnit(row.unit_price)}
+                          <TrendArrow curr={row.unit_price} prev={nextRow?.unit_price ?? null} />
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
+                          {fmtPrice(row.total_price)}
+                          <TrendArrow curr={row.total_price} prev={nextRow?.total_price ?? null} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500">{row.follow_count ?? 0}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 底部链接 */}
+        {queriedUrl && (
+          <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+            <a href={queriedUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline break-all">
+              {queriedUrl}
+            </a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ===== 图片预览弹窗（复用样式）=====
 function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   useEffect(() => {
@@ -166,6 +356,27 @@ function ImageModal({ url, title, onClose }: { url: string; title: string; onClo
   );
 }
 
+// ===== 常量 =====
+const HOUSE_TYPE_OPTIONS = [
+  { value: '', label: '全部户型' },
+  { value: '1室', label: '1室' },
+  { value: '2室', label: '2室' },
+  { value: '3室', label: '3室' },
+  { value: '4室', label: '4室' },
+  { value: '5室', label: '5室' },
+];
+
+const ORDER_OPTIONS = [
+  { value: 'created_at|desc', label: '收藏时间 ↓ 最新' },
+  { value: 'created_at|asc',  label: '收藏时间 ↑ 最早' },
+  { value: 'unit_price|asc',  label: '单价 ↑ 升序' },
+  { value: 'unit_price|desc', label: '单价 ↓ 降序' },
+  { value: 'total_price|asc', label: '总价 ↑ 升序' },
+  { value: 'total_price|desc',label: '总价 ↓ 降序' },
+  { value: 'area|asc',        label: '面积 ↑ 升序' },
+  { value: 'area|desc',       label: '面积 ↓ 降序' },
+];
+
 // ===== 主面板 =====
 export default function FavoritesPanel() {
   // 筛选条件
@@ -173,26 +384,35 @@ export default function FavoritesPanel() {
   const [filterDetailUrl, setFilterDetailUrl] = useState('');
   const [communityInput, setCommunityInput]   = useState('');
 
+  // 新增：户型、排序、过滤条件
+  const [houseType, setHouseType]               = useState('');
+  const [sortKey, setSortKey]                   = useState('created_at|desc');
+  const [excludeBasement, setExcludeBasement]   = useState(false);
+  const [excludeLowFloor, setExcludeLowFloor]   = useState(false);
+  const [excludeTwoFloor, setExcludeTwoFloor]   = useState(false);
+  const [excludeOneFloor, setExcludeOneFloor]   = useState(false);
+
   // 小区候选下拉
-  const [communityOptions, setCommunityOptions]       = useState<string[]>([]);
+  const [communityOptions, setCommunityOptions]         = useState<string[]>([]);
   const [communityDropdownOpen, setCommunityDropdownOpen] = useState(false);
-  const [communityLoading, setCommunityLoading]       = useState(false);
+  const [communityLoading, setCommunityLoading]         = useState(false);
   const communityRef = useRef<HTMLDivElement>(null);
 
   // 分页
-  const [page, setPage]         = useState(1);
-  const pageSize                = 50;
-  const [total, setTotal]       = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize        = 50;
+  const [total, setTotal] = useState(0);
 
-  // 数据
-  const [rows, setRows]         = useState<FavoriteRow[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
+  // 原始数据（从 API 取回，不含前端过滤）
+  const [allRows, setAllRows]     = useState<FavoriteRow[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
 
   // 弹窗
-  const [imgModal, setImgModal]       = useState<{ url: string; title: string } | null>(null);
-  const [editModal, setEditModal]     = useState<FavoriteRow | null>(null);
-  const [deletingId, setDeletingId]   = useState<number | null>(null);
+  const [imgModal, setImgModal]                   = useState<{ url: string; title: string } | null>(null);
+  const [editModal, setEditModal]                 = useState<FavoriteRow | null>(null);
+  const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
+  const [deletingId, setDeletingId]               = useState<number | null>(null);
 
   // 防抖搜索小区候选
   useEffect(() => {
@@ -225,21 +445,19 @@ export default function FavoritesPanel() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const fetchFavorites = useCallback(async (p: number = page) => {
+  // 拉取全量收藏（community/detailUrl 由服务端过滤，其余在前端处理）
+  const fetchFavorites = useCallback(async (p: number = 1) => {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({
-        page: String(p),
-        pageSize: String(pageSize),
-      });
+      const params = new URLSearchParams({ page: String(p), pageSize: String(pageSize) });
       if (filterCommunity.trim()) params.set('community', filterCommunity.trim());
       if (filterDetailUrl.trim()) params.set('detailUrl', filterDetailUrl.trim());
 
       const res  = await fetch(`/api/favorite?${params}`);
       const json = await res.json();
       if (json.success) {
-        setRows(json.data ?? []);
+        setAllRows(json.data ?? []);
         setTotal(json.total ?? 0);
         setPage(p);
       } else {
@@ -250,7 +468,7 @@ export default function FavoritesPanel() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, filterCommunity, filterDetailUrl]);
+  }, [pageSize, filterCommunity, filterDetailUrl]);
 
   // 初次加载
   useEffect(() => {
@@ -267,7 +485,7 @@ export default function FavoritesPanel() {
       const res  = await fetch(`/api/favorite/${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
-        setRows(prev => prev.filter(r => r.id !== id));
+        setAllRows(prev => prev.filter(r => r.id !== id));
         setTotal(prev => prev - 1);
       } else {
         alert(json.error ?? '删除失败');
@@ -280,8 +498,48 @@ export default function FavoritesPanel() {
   };
 
   const handleNoteSaved = (id: number, note: string) => {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, note } : r));
+    setAllRows(prev => prev.map(r => r.id === id ? { ...r, note } : r));
   };
+
+  // ===== 前端过滤 + 排序（户型、楼层过滤、排序）=====
+  const rows = (() => {
+    let filtered = allRows;
+
+    // 户型
+    if (houseType) {
+      filtered = filtered.filter(r => r.house_type?.includes(houseType));
+    }
+    // 过滤条件
+    if (excludeBasement) {
+      filtered = filtered.filter(r => !r.floor_info?.includes('地下室'));
+    }
+    if (excludeLowFloor) {
+      filtered = filtered.filter(r => !/共3.层/.test(r.floor_info ?? ''));
+    }
+    if (excludeTwoFloor) {
+      filtered = filtered.filter(r => !/共2.层/.test(r.floor_info ?? ''));
+    }
+    if (excludeOneFloor) {
+      filtered = filtered.filter(r => !/共1.层/.test(r.floor_info ?? ''));
+    }
+
+    // 排序
+    const [field, dir] = sortKey.split('|');
+    const asc = dir === 'asc';
+    filtered = [...filtered].sort((a, b) => {
+      const av = (a as Record<string, unknown>)[field] as number | string | null;
+      const bv = (b as Record<string, unknown>)[field] as number | string | null;
+      if (av == null && bv == null) return 0;
+      if (av == null) return asc ? 1 : -1;
+      if (bv == null) return asc ? -1 : 1;
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      return asc ? (Number(av) - Number(bv)) : (Number(bv) - Number(av));
+    });
+
+    return filtered;
+  })();
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -294,6 +552,15 @@ export default function FavoritesPanel() {
       {/* ===== 图片弹窗 ===== */}
       {imgModal && (
         <ImageModal url={imgModal.url} title={imgModal.title} onClose={() => setImgModal(null)} />
+      )}
+
+      {/* ===== 价格历史弹窗 ===== */}
+      {priceHistoryModal && (
+        <PriceHistoryModal
+          detailUrl={priceHistoryModal.detailUrl}
+          title={priceHistoryModal.title}
+          onClose={() => setPriceHistoryModal(null)}
+        />
       )}
 
       {/* ===== 编辑备注弹窗 ===== */}
@@ -310,7 +577,7 @@ export default function FavoritesPanel() {
         <div className="flex flex-wrap items-end gap-4">
 
           {/* 小区搜索 Combobox */}
-          <div ref={communityRef} className="relative" style={{ minWidth: 240 }}>
+          <div ref={communityRef} className="relative" style={{ minWidth: 220 }}>
             <label className="block text-xs font-medium text-gray-600 mb-1">小区名称</label>
             <div className="relative">
               <input
@@ -359,7 +626,7 @@ export default function FavoritesPanel() {
           </div>
 
           {/* 详情链接筛选 */}
-          <div style={{ minWidth: 320 }}>
+          <div style={{ minWidth: 260 }}>
             <label className="block text-xs font-medium text-gray-600 mb-1">详情链接（detail_url）</label>
             <input
               type="text"
@@ -369,6 +636,55 @@ export default function FavoritesPanel() {
               placeholder="输入 URL 关键词筛选..."
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-400 font-mono text-xs"
             />
+          </div>
+
+          {/* 户型筛选 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">户型筛选</label>
+            <select
+              value={houseType}
+              onChange={e => setHouseType(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-400"
+            >
+              {HOUSE_TYPE_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 排序方式 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">排序方式</label>
+            <select
+              value={sortKey}
+              onChange={e => setSortKey(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-400"
+            >
+              {ORDER_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 过滤条件 */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-gray-600">过滤条件</label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={excludeBasement} onChange={e => setExcludeBasement(e.target.checked)} className="text-yellow-500" />
+              <span className="text-sm text-gray-700">排除地下室</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={excludeLowFloor} onChange={e => setExcludeLowFloor(e.target.checked)} className="text-yellow-500" />
+              <span className="text-sm text-gray-700">排除共3层楼</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={excludeTwoFloor} onChange={e => setExcludeTwoFloor(e.target.checked)} className="text-yellow-500" />
+              <span className="text-sm text-gray-700">排除共2层楼</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={excludeOneFloor} onChange={e => setExcludeOneFloor(e.target.checked)} className="text-yellow-500" />
+              <span className="text-sm text-gray-700">排除共1层楼</span>
+            </label>
           </div>
 
           {/* 查询按钮 */}
@@ -408,11 +724,18 @@ export default function FavoritesPanel() {
           </div>
         )}
 
-        {!loading && rows.length === 0 && (
+        {!loading && allRows.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <span className="text-5xl mb-4">⭐</span>
             <p className="text-sm">暂无收藏记录</p>
             <p className="text-xs mt-1 text-gray-300">在「房源列表」中点击 ⭐ 按钮即可收藏房源</p>
+          </div>
+        )}
+
+        {!loading && allRows.length > 0 && rows.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400">
+            <span className="text-5xl mb-4">🔍</span>
+            <p className="text-sm">当前过滤条件下无匹配房源</p>
           </div>
         )}
 
@@ -423,8 +746,13 @@ export default function FavoritesPanel() {
               <span className="text-sm font-semibold text-gray-700">
                 ⭐ 我的收藏
                 {filterCommunity && <span className="ml-2 text-yellow-600">— {filterCommunity}</span>}
+                {houseType && <span className="ml-2 text-blue-500">({houseType})</span>}
               </span>
-              <span className="text-xs text-gray-400">共 {total} 条</span>
+              <span className="text-xs text-gray-400">
+                {rows.length < allRows.length
+                  ? `筛选后 ${rows.length} 条 / 共 ${total} 条`
+                  : `共 ${total} 条`}
+              </span>
             </div>
 
             <div className="overflow-x-auto">
@@ -521,6 +849,13 @@ export default function FavoritesPanel() {
                           ) : (
                             <span className="text-gray-300 text-xs">—</span>
                           )}
+                          <button
+                            onClick={() => setPriceHistoryModal({ detailUrl: row.detail_url ?? '', title: row.title || row.community })}
+                            className="inline-flex items-center px-2 py-1 bg-emerald-500 text-white text-xs rounded hover:bg-emerald-600 transition-colors"
+                            title="查看价格历史"
+                          >
+                            📈
+                          </button>
                           <button
                             onClick={() => setEditModal(row)}
                             className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors"
