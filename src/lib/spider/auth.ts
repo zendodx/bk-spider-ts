@@ -47,6 +47,8 @@ export class AuthManager {
       console.log('⚠️ 检测到登录浮层，请手动完成登录');
       await setWindowVisible(page, true);
       await this.waitForManualLogin(page, timeout);
+      // 登录后页面可能还在跳转，等待彻底稳定再采集 Cookie
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       await this.saveCookies(context);
       await setWindowVisible(page, false);
       console.log('✓ 登录成功，Cookie 已保存至数据库');
@@ -69,9 +71,13 @@ export class AuthManager {
 
   /**
    * 等待人工完成登录
+   *
+   * 登录完成的两种信号：
+   *   1. 页面发生导航（登录后跳转）→ 执行上下文销毁，page.$ 会抛异常，捕获即视为完成
+   *   2. 登录浮层 div.window-login 从 DOM 中消失
    */
   private async waitForManualLogin(page: Page, timeout: number): Promise<void> {
-    const POLL_MS = 3000;
+    const POLL_MS = 1500;
     const startTime = Date.now();
 
     console.log(`⏳ 等待手动登录完成（最长 ${Math.round(timeout / 1000)} 秒）...`);
@@ -79,9 +85,29 @@ export class AuthManager {
     while (Date.now() - startTime < timeout) {
       await page.waitForTimeout(POLL_MS);
 
-      const stillVisible = await page.$('div.window-login');
-      if (!stillVisible) {
-        return;
+      try {
+        const stillVisible = await page.$('div.window-login');
+        if (!stillVisible) {
+          // 浮层已消失，登录完成
+          return;
+        }
+      } catch (e) {
+        const msg = String(e);
+        // "Execution context was destroyed" / "most likely because of a navigation"
+        // 说明页面已跳转（登录成功），直接认为登录完成
+        if (
+          msg.includes('context was destroyed') ||
+          msg.includes('navigation') ||
+          msg.includes('Target closed') ||
+          msg.includes('Session closed')
+        ) {
+          console.log('✓ 检测到页面跳转，登录已完成');
+          // 等待页面稳定后再继续
+          await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+          return;
+        }
+        // 其他未知错误继续抛出
+        throw e;
       }
 
       const remaining = Math.ceil((timeout - (Date.now() - startTime)) / 1000);

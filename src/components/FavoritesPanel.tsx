@@ -544,8 +544,8 @@ export default function FavoritesPanel() {
     const [field, dir] = sortKey.split('|');
     const asc = dir === 'asc';
     filtered = [...filtered].sort((a, b) => {
-      const av = (a as Record<string, unknown>)[field] as number | string | null;
-      const bv = (b as Record<string, unknown>)[field] as number | string | null;
+      const av = (a as unknown as Record<string, unknown>)[field] as number | string | null;
+      const bv = (b as unknown as Record<string, unknown>)[field] as number | string | null;
       if (av == null && bv == null) return 0;
       if (av == null) return asc ? 1 : -1;
       if (bv == null) return asc ? -1 : 1;
@@ -945,15 +945,18 @@ export default function FavoritesPanel() {
                       <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">{row.district || '—'}</td>
                       <td className="px-4 py-2.5 text-gray-700 font-medium whitespace-nowrap">{row.community}</td>
                       <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{row.title || '—'}</td>
-                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-center">
                         {row.header_image ? (
-                          <button
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`/api/proxy/image?url=${encodeURIComponent(row.header_image)}`}
+                            alt={row.title || row.community}
+                            className="w-16 h-12 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                            style={{ minWidth: 64 }}
+                            title="点击查看大图"
                             onClick={() => setImgModal({ url: row.header_image!, title: row.title || row.community })}
-                            className="inline-flex items-center px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
-                            title="预览缩略图"
-                          >
-                            🖼️
-                          </button>
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}

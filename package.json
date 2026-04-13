@@ -4,15 +4,17 @@
   "description": "贝壳找房爬虫桌面应用 - Electron + Next.js + Playwright",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm run next:dev\" \"npm run electron:dev\"",
+    "dev": "npm run rebuild:system && concurrently \"npm run next:dev\" \"npm run electron:dev\"",
     "next:dev": "next dev -p 3799",
     "next:build": "next build",
     "electron:dev": "wait-on http://localhost:3799 && electron .",
-    "electron:build": "npm run next:build && electron-builder",
-    "build": "npm run next:build && electron-builder",
-    "build:mac": "npm run next:build && electron-builder --mac",
-    "build:win": "npm run next:build && electron-builder --win",
-    "postinstall": "electron-builder install-app-deps"
+    "electron:build": "npm run next:build && electron-builder && npm run rebuild:system",
+    "build": "npm run next:build && electron-builder && npm run rebuild:system",
+    "build:mac": "npm run next:build && electron-builder --mac && npm run rebuild:system",
+    "build:win": "npm run next:build && electron-builder --win && npm run rebuild:system",
+    "rebuild:system": "npm rebuild better-sqlite3",
+    "rebuild:electron": "electron-builder install-app-deps",
+    "postinstall": "echo 'skip auto rebuild - use npm run rebuild:system for dev mode'"
   },
   "keywords": [],
   "author": "",

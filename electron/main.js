@@ -24,13 +24,23 @@ process.env.PLAYWRIGHT_BROWSERS_PATH = PLAYWRIGHT_BROWSERS_PATH;
 // =====================
 const NEXT_PORT = 3799;
 const NEXT_URL = `http://localhost:${NEXT_PORT}`;
-const IS_DEV = process.env.NODE_ENV !== 'production';
+// app.isPackaged 是 Electron 官方推荐的打包环境检测方式
+// 不依赖 process.env.NODE_ENV（该变量在 Electron 主进程中默认未设置）
+const IS_DEV = !app.isPackaged;
 const RESOURCES_PATH = app.isPackaged
   ? process.resourcesPath
   : path.join(__dirname, '..');
 
 let mainWindow = null;
 let nextProcess = null;
+
+// =====================
+// 单实例锁（防止多开）
+// =====================
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
 
 /**
  * 跨平台终止进程（含子进程树）
@@ -94,9 +104,11 @@ function startNextServer() {
     let cmd, args, cwd;
 
     if (app.isPackaged) {
-      // 生产模式：直接用 node 运行 standalone/server.js（Next.js standalone 输出）
-      // 打包后结构：Resources/app/.next/standalone/server.js
-      const standaloneServer = path.join(RESOURCES_PATH, 'app', '.next', 'standalone', 'server.js');
+      // 生产模式：server.js 在 asarUnpack 解包目录（asar 内文件不能被 spawn 执行）
+      // 打包后结构：Resources/app.asar.unpacked/.next/standalone/server.js
+      const standaloneServer = path.join(
+        process.resourcesPath, 'app.asar.unpacked', '.next', 'standalone', 'server.js'
+      );
       cwd = path.dirname(standaloneServer);
       cmd = process.execPath; // 使用 Electron 内置的 Node.js
       args = [standaloneServer];
@@ -253,9 +265,9 @@ function ensureChromium() {
     const isWin = process.platform === 'win32';
     let playwrightCli = null;
 
-    // 打包后路径：Resources/app/.next/standalone/node_modules/playwright/cli.js
+    // 打包后路径：Resources/app.asar.unpacked/.next/standalone/node_modules/playwright/cli.js
     const standaloneCliPath = path.join(
-      RESOURCES_PATH, 'app', '.next', 'standalone',
+      process.resourcesPath, 'app.asar.unpacked', '.next', 'standalone',
       'node_modules', 'playwright', 'cli.js'
     );
     // 开发模式路径
@@ -275,13 +287,17 @@ function ensureChromium() {
     }
 
     const child = spawn(cmd, args, {
-      stdio: 'inherit',
+      // 打包后没有 tty，不能用 inherit，改为 pipe 避免崩溃
+      stdio: ['ignore', 'pipe', 'pipe'],
       shell: isWin,
       env: {
         ...process.env,
         PLAYWRIGHT_BROWSERS_PATH: browsersPath,
       },
     });
+
+    child.stdout && child.stdout.on('data', (d) => console.log('[Playwright]', d.toString().trim()));
+    child.stderr && child.stderr.on('data', (d) => console.warn('[Playwright]', d.toString().trim()));
 
     child.on('close', (code) => {
       if (code === 0) {
@@ -323,8 +339,19 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // 第二个实例启动时，把焦点给已有窗口
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });

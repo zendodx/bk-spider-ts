@@ -8,13 +8,17 @@ import path from 'path';
 import {
   Document,
   Page,
-  Text,
+  Text as _Text,
   View,
   Link,
   Image,
   StyleSheet,
   Font,
 } from '@react-pdf/renderer';
+
+// @react-pdf/renderer 的 Text 类型定义缺少 numberOfLines，用 any 补全
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Text = _Text as any;
 
 // 使用本地字体文件（放在 public/fonts/ 目录下）
 // process.cwd() 在 Next.js 中指向项目根目录
@@ -469,7 +473,7 @@ export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNot
           <Text style={styles.footerText}>贝壳找房爬虫 · 收藏房源导出报告</Text>
           <Text
             style={styles.footerText}
-            render={({ pageNumber, totalPages }) => `第 ${pageNumber} / ${totalPages} 页`}
+            render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `第 ${pageNumber} / ${totalPages} 页`}
           />
         </View>
       </Page>

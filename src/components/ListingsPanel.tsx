@@ -945,15 +945,18 @@ export default function ListingsPanel() {
                         {row.title || '—'}
                       </td>
                       {/* 缩略图 */}
-                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-center">
                         {row.header_image ? (
-                          <button
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`/api/proxy/image?url=${encodeURIComponent(row.header_image)}`}
+                            alt={row.title || row.community}
+                            className="w-16 h-12 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                            style={{ minWidth: 64 }}
+                            title="点击查看大图"
                             onClick={() => setImgModal({ url: row.header_image!, title: row.title || row.community })}
-                            className="inline-flex items-center px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
-                            title="预览缩略图"
-                          >
-                            🖼️
-                          </button>
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}

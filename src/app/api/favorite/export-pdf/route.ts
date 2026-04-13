@@ -102,13 +102,14 @@ export async function POST(request: NextRequest) {
     });
 
     // 渲染 PDF 到 Buffer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pdfBuffer = await renderToBuffer(
       React.createElement(FavoritesPdfDocument, {
         rows: rowsWithImages,
         generatedAt,
         filterDesc,
         includeNote: includeNote ?? false,
-      })
+      }) as any
     );
 
     // 生成文件名
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
       .slice(0, 16);
     const filename = `收藏房源_${dateStr}.pdf`;
 
-    return new Response(pdfBuffer, {
+    return new Response(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

@@ -827,25 +827,50 @@ export default function StatsPanel() {
           <>
             {/* 摘要卡片 */}
             <div className="grid grid-cols-4 gap-4 mb-4">
-              {[
-                { label: '统计天数', value: `${rows.length} 天` },
-                { label: '总挂牌量', value: `${rows.reduce((s, r) => s + r.unique_listings, 0)} 套` },
-                {
-                  label: '最新平均单价',
-                  value: rows[0]?.avg_unit_price != null
-                    ? `${fmtUnitPrice(rows[0].avg_unit_price)} 元/平`
-                    : '-',
-                },
-                {
-                  label: '最新平均总价',
-                  value: rows[0]?.avg_price != null ? `${fmtPrice(rows[0].avg_price)} 万` : '-',
-                },
-              ].map(card => (
-                <div key={card.label} className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-                  <p className="text-xs text-gray-500 mb-1">{card.label}</p>
-                  <p className="text-lg font-bold text-gray-800">{card.value}</p>
+              {/* 统计天数 */}
+              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+                <p className="text-xs text-gray-500 mb-1">统计天数</p>
+                <p className="text-lg font-bold text-gray-800">{rows.length} 天</p>
+              </div>
+
+              {/* 最新挂牌量（只取最近一天，标注日期） */}
+              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs text-gray-500">最新挂牌量</p>
+                  {rows[0]?.stat_date && (
+                    <span className="text-xs text-gray-400 font-mono">{rows[0].stat_date}</span>
+                  )}
                 </div>
-              ))}
+                <p className="text-lg font-bold text-gray-800">
+                  {rows[0]?.unique_listings ?? '-'} 套
+                </p>
+              </div>
+
+              {/* 最新平均单价 */}
+              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs text-gray-500">最新平均单价</p>
+                  {rows[0]?.stat_date && (
+                    <span className="text-xs text-gray-400 font-mono">{rows[0].stat_date}</span>
+                  )}
+                </div>
+                <p className="text-lg font-bold text-gray-800">
+                  {rows[0]?.avg_unit_price != null ? `${fmtUnitPrice(rows[0].avg_unit_price)} 元/平` : '-'}
+                </p>
+              </div>
+
+              {/* 最新平均总价 */}
+              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs text-gray-500">最新平均总价</p>
+                  {rows[0]?.stat_date && (
+                    <span className="text-xs text-gray-400 font-mono">{rows[0].stat_date}</span>
+                  )}
+                </div>
+                <p className="text-lg font-bold text-gray-800">
+                  {rows[0]?.avg_price != null ? `${fmtPrice(rows[0].avg_price)} 万` : '-'}
+                </p>
+              </div>
             </div>
 
             {/* 数据表格 */}
