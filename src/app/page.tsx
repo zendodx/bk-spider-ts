@@ -8,8 +8,9 @@ import StatsPanel from '@/components/StatsPanel';
 import ListingsPanel from '@/components/ListingsPanel';
 import FavoritesPanel from '@/components/FavoritesPanel';
 import SettingsPanel from '@/components/SettingsPanel';
+import CleanerPanel from '@/components/CleanerPanel';
 
-type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'favorites' | 'settings';
+type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'favorites' | 'cleaner' | 'settings';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
@@ -28,6 +29,7 @@ export default function Home() {
     { id: 'stats',     label: '价格统计', icon: '📊' },
     { id: 'listings',  label: '房源列表', icon: '🏘️' },
     { id: 'favorites', label: '房源收藏', icon: '⭐' },
+    { id: 'cleaner',   label: '数据清洗', icon: '🧹' },
     { id: 'settings',  label: '系统设置', icon: '⚙️' },
   ];
 
@@ -68,6 +70,7 @@ export default function Home() {
         <div className="h-full" style={{ display: activeTab === 'stats'     ? 'block' : 'none' }}><StatsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'listings'  ? 'block' : 'none' }}><ListingsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'favorites' ? 'block' : 'none' }}><FavoritesPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'cleaner'   ? 'block' : 'none' }}><CleanerPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'settings'  ? 'block' : 'none' }}><SettingsPanel /></div>
       </main>
     </div>
