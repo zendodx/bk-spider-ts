@@ -266,6 +266,65 @@ function PriceHistoryModal({
   );
 }
 
+// ===== 取消收藏确认弹窗组件 =====
+function UnfavoriteConfirmModal({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
+  const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onCancel();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={handleBackdrop}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-xs mx-4 flex flex-col">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
+          <span className="text-base font-semibold text-gray-700">💔 取消收藏</span>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
+          >✕</button>
+        </div>
+
+        {/* 内容 */}
+        <div className="px-5 py-5 text-sm text-gray-600 text-center">
+          确定要取消收藏该房源吗？
+        </div>
+
+        {/* 底部按钮 */}
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-5 py-2 text-sm font-semibold rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
+          >
+            确认取消收藏
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== 收藏弹窗组件 =====
 function FavoriteModal({
   row,
@@ -274,7 +333,7 @@ function FavoriteModal({
 }: {
   row: ListingRow;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (id: number, detailUrl: string) => void;
 }) {
   const NOTE_TEMPLATE = '- 楼层：\n\n- 装修：\n\n- 楼面：\n\n- 抵押：\n\n- 学区：\n\n- 成交价：';
   const [note, setNote]       = useState(NOTE_TEMPLATE);
@@ -318,7 +377,7 @@ function FavoriteModal({
       const json = await res.json();
       if (json.success) {
         setSaved(true);
-        onSaved?.();
+        onSaved?.(Number(json.id), row.detail_url ?? '');
         setTimeout(() => onClose(), 800);
       } else {
         setError(json.error ?? '收藏失败');
@@ -538,6 +597,14 @@ export default function ListingsPanel() {
   // 收藏弹窗
   const [favoriteModal, setFavoriteModal] = useState<ListingRow | null>(null);
 
+  // 取消收藏确认弹窗
+  const [unfavoriteConfirm, setUnfavoriteConfirm] = useState<{ detailUrl: string; favoriteId: number } | null>(null);
+
+  // 收藏状态：detail_url -> favorite_id（已收藏才有值）
+  const [favoritedMap, setFavoritedMap] = useState<Record<string, number>>({});
+  // 正在切换收藏状态的 detail_url 集合（防重复点击）
+  const [favoritingUrls, setFavoritingUrls] = useState<Set<string>>(new Set());
+
   // 防抖查询小区候选
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -603,7 +670,25 @@ export default function ListingsPanel() {
       const res = await fetch(`/api/listings/query?${params}`);
       const json = await res.json();
       if (json.success) {
-        setRows(json.data ?? []);
+        const data: ListingRow[] = json.data ?? [];
+        setRows(data);
+        // 批量拉取收藏状态
+        const urls = data.map(r => r.detail_url).filter(Boolean) as string[];
+        if (urls.length > 0) {
+          try {
+            const checkRes = await fetch('/api/favorite/check', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ detailUrls: urls }),
+            });
+            const checkJson = await checkRes.json();
+            if (checkJson.success) setFavoritedMap(checkJson.favorited ?? {});
+          } catch {
+            // 收藏状态拉取失败不影响主流程
+          }
+        } else {
+          setFavoritedMap({});
+        }
       } else {
         setError(json.error ?? '查询失败');
       }
@@ -613,6 +698,26 @@ export default function ListingsPanel() {
       setLoading(false);
     }
   }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, sortKey, limit, areaEnabled, areaMin, areaMax]);
+
+  // 取消收藏
+  const handleUnfavorite = useCallback(async (detailUrl: string, favoriteId: number) => {
+    setFavoritingUrls(prev => new Set(prev).add(detailUrl));
+    try {
+      const res  = await fetch(`/api/favorite/${favoriteId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.success) {
+        setFavoritedMap(prev => {
+          const next = { ...prev };
+          delete next[detailUrl];
+          return next;
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFavoritingUrls(prev => { const s = new Set(prev); s.delete(detailUrl); return s; });
+    }
+  }, []);
 
   // 格式化数值
   const fmtUnit = (v: number | null) => {
@@ -656,6 +761,22 @@ export default function ListingsPanel() {
         <FavoriteModal
           row={favoriteModal}
           onClose={() => setFavoriteModal(null)}
+          onSaved={(id, detailUrl) => {
+            if (detailUrl) {
+              setFavoritedMap(prev => ({ ...prev, [detailUrl]: id }));
+            }
+          }}
+        />
+      )}
+
+      {/* ===== 取消收藏确认弹窗 ===== */}
+      {unfavoriteConfirm && (
+        <UnfavoriteConfirmModal
+          onConfirm={() => {
+            handleUnfavorite(unfavoriteConfirm.detailUrl, unfavoriteConfirm.favoriteId);
+            setUnfavoriteConfirm(null);
+          }}
+          onCancel={() => setUnfavoriteConfirm(null)}
         />
       )}
 
@@ -1008,13 +1129,24 @@ export default function ListingsPanel() {
                           >
                             📈
                           </button>
-                          <button
-                            onClick={() => setFavoriteModal(row)}
-                            className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors"
-                            title="收藏该房源"
-                          >
-                            ⭐
-                          </button>
+                          {row.detail_url && favoritedMap[row.detail_url] !== undefined ? (
+                            <button
+                              onClick={() => setUnfavoriteConfirm({ detailUrl: row.detail_url!, favoriteId: favoritedMap[row.detail_url!] })}
+                              disabled={favoritingUrls.has(row.detail_url)}
+                              className="inline-flex items-center px-2 py-1 bg-gray-200 text-gray-600 text-xs rounded hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-50"
+                              title="取消收藏"
+                            >
+                              {favoritingUrls.has(row.detail_url) ? '…' : '💔'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setFavoriteModal(row)}
+                              className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors"
+                              title="收藏该房源"
+                            >
+                              ⭐
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
