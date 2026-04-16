@@ -335,7 +335,7 @@ function FavoriteModal({
   onClose: () => void;
   onSaved?: (id: number, detailUrl: string) => void;
 }) {
-  const NOTE_TEMPLATE = '- 楼层：\n\n- 装修：\n\n- 楼面：\n\n- 抵押：\n\n- 学区：\n\n- 成交价：';
+  const NOTE_TEMPLATE = '- 基本：\n- 装修：\n- 抵押：\n- 学区：\n- 价格：\n- 缺点：\n- 优点：';
   const [note, setNote]       = useState(NOTE_TEMPLATE);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
