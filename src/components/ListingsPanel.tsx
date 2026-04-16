@@ -500,6 +500,180 @@ function FavoriteModal({
   );
 }
 
+// ===== 自定义日历选择器（带绿点标记）=====
+function DatePickerWithDots({
+  value,
+  onChange,
+  activeDates,
+}: {
+  value: string;           // YYYY-MM-DD
+  onChange: (date: string) => void;
+  activeDates: Set<string>; // 有数据的日期集合
+}) {
+  // 当前日历展示的年月
+  const [viewYear, setViewYear]   = useState(() => {
+    const d = value ? new Date(value + 'T00:00:00') : new Date();
+    return d.getFullYear();
+  });
+  const [viewMonth, setViewMonth] = useState(() => {
+    const d = value ? new Date(value + 'T00:00:00') : new Date();
+    return d.getMonth(); // 0-11
+  });
+  const [open, setOpen]           = useState(false);
+  const containerRef              = useRef<HTMLDivElement>(null);
+
+  // 同步 value 变化时更新视图年月
+  useEffect(() => {
+    if (value) {
+      const d = new Date(value + 'T00:00:00');
+      setViewYear(d.getFullYear());
+      setViewMonth(d.getMonth());
+    }
+  }, [value]);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // 构建当月日历格子
+  const buildCalendar = () => {
+    const firstDay = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    // 以周一为起始
+    const startOffset = (firstDay + 6) % 7; // Mon=0, Tue=1, ...
+    const cells: (number | null)[] = [];
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    // 补齐到 7 的倍数
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  };
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  const todayStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const cells = buildCalendar();
+  const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
+  const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* 触发按钮（模拟 input[type=date] 外观）*/}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white flex items-center gap-2 min-w-[136px]"
+      >
+        <span className="text-gray-700 font-mono">{value || '选择日期'}</span>
+        <svg className="ml-auto h-4 w-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      </button>
+
+      {/* 日历弹出层 */}
+      {open && (
+        <div className="absolute z-50 top-full mt-1 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 w-64 select-none">
+          {/* 月份导航 */}
+          <div className="flex items-center justify-between mb-2">
+            <button
+              type="button"
+              onClick={prevMonth}
+              className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+            >
+              ‹
+            </button>
+            <span className="text-sm font-semibold text-gray-700">
+              {viewYear} 年 {MONTH_NAMES[viewMonth]}
+            </span>
+            <button
+              type="button"
+              onClick={nextMonth}
+              disabled={`${viewYear}-${pad(viewMonth + 1)}` >= todayStr.slice(0, 7)}
+              className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ›
+            </button>
+          </div>
+
+          {/* 星期标题 */}
+          <div className="grid grid-cols-7 mb-1">
+            {WEEK_LABELS.map(l => (
+              <div key={l} className="text-center text-xs text-gray-400 py-0.5">{l}</div>
+            ))}
+          </div>
+
+          {/* 日期格子 */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((day, idx) => {
+              if (day === null) {
+                return <div key={idx} />;
+              }
+              const dateStr = `${viewYear}-${pad(viewMonth + 1)}-${pad(day)}`;
+              const isSelected = dateStr === value;
+              const isToday    = dateStr === todayStr;
+              const isFuture   = dateStr > todayStr;
+              const hasDot     = activeDates.has(dateStr);
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={isFuture}
+                  onClick={() => { onChange(dateStr); setOpen(false); }}
+                  className={`relative flex flex-col items-center justify-center rounded-md py-1 text-xs transition-colors
+                    ${isSelected
+                      ? 'bg-blue-500 text-white font-semibold'
+                      : isToday
+                        ? 'bg-blue-50 text-blue-600 font-semibold'
+                        : isFuture
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-700 hover:bg-gray-100'}
+                  `}
+                >
+                  <span>{day}</span>
+                  {/* 绿色小点：有数据 */}
+                  {hasDot && (
+                    <span className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${isSelected ? 'bg-green-200' : 'bg-green-500'}`} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 底部快捷：今天 */}
+          <div className="mt-2 pt-2 border-t border-gray-100 flex justify-end">
+            <button
+              type="button"
+              onClick={() => { onChange(todayStr); setOpen(false); }}
+              className="text-xs text-blue-500 hover:underline"
+            >
+              今天
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== 图片预览弹窗组件 =====
 function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   // 点击遮罩关闭
@@ -604,6 +778,25 @@ export default function ListingsPanel() {
   const [favoritedMap, setFavoritedMap] = useState<Record<string, number>>({});
   // 正在切换收藏状态的 detail_url 集合（防重复点击）
   const [favoritingUrls, setFavoritingUrls] = useState<Set<string>>(new Set());
+
+  // 有数据的日期集合（用于日历绿点标记）
+  const [activeDates, setActiveDates] = useState<Set<string>>(new Set());
+
+  // 当 community 变化时拉取有数据的日期列表
+  useEffect(() => {
+    const c = community.trim();
+    if (!c) { setActiveDates(new Set()); return; }
+    let cancelled = false;
+    fetch(`/api/listings/dates?community=${encodeURIComponent(c)}`)
+      .then(r => r.json())
+      .then(json => {
+        if (!cancelled && json.success) {
+          setActiveDates(new Set(json.dates as string[]));
+        }
+      })
+      .catch(() => {/* ignore */});
+    return () => { cancelled = true; };
+  }, [community]);
 
   // 防抖查询小区候选
   useEffect(() => {
@@ -836,12 +1029,10 @@ export default function ListingsPanel() {
           {/* 采集日期 */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">采集日期</label>
-            <input
-              type="date"
+            <DatePickerWithDots
               value={crawlDate}
-              max={today()}
-              onChange={e => setCrawlDate(e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={setCrawlDate}
+              activeDates={activeDates}
             />
           </div>
 
