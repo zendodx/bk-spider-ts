@@ -479,6 +479,217 @@ function ChartModal({ rows, community, onClose }: {
 }
 
 // ─────────────────────────────────────────────
+// 生成分析 Prompt 弹窗
+// ─────────────────────────────────────────────
+function PromptModal({ prompt, onClose }: { prompt: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = prompt;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+        {/* 头部 */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-base font-bold text-gray-800">🤖 价格预测分析 Prompt</h2>
+            <p className="text-xs text-gray-400 mt-0.5">已包含真实统计数据，可直接粘贴到 AI 对话框</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopy}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                copied
+                  ? 'bg-green-500 text-white'
+                  : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+              }`}
+            >
+              {copied ? '✓ 已复制' : '📋 复制全文'}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors text-xl leading-none ml-1"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Prompt 内容 */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <pre className="whitespace-pre-wrap text-sm text-gray-700 font-mono leading-relaxed bg-gray-50 rounded-xl border border-gray-200 p-4">
+            {prompt}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface PromptFilters {
+  houseType: string;
+  areaEnabled: boolean;
+  areaMin: string;
+  areaMax: string;
+  excludeBasement: boolean;
+  excludeLowFloor: boolean;
+  excludeTwoFloor: boolean;
+  excludeOneFloor: boolean;
+}
+
+/**
+ * 根据统计数据生成价格预测分析 prompt
+ */
+function buildAnalysisPrompt(
+  community: string,
+  filters: PromptFilters,
+  rows: StatRow[],
+  fmtUnitPrice: (v: number | null) => string,
+  fmtPrice: (v: number | null) => string,
+): string {
+  const { houseType, areaEnabled, areaMin, areaMax, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor } = filters;
+  if (rows.length === 0) return '';
+
+  // rows 是降序（最新在前），取最新和最早
+  const latest = rows[0];
+  const earliest = rows[rows.length - 1];
+
+  // 计算均价趋势（万/平 → 元/平）
+  const latestAvgUnit  = latest.avg_unit_price  != null ? Number(latest.avg_unit_price)  * 10000 : null;
+  const earliestAvgUnit = earliest.avg_unit_price != null ? Number(earliest.avg_unit_price) * 10000 : null;
+  const unitPriceChange = latestAvgUnit != null && earliestAvgUnit != null && earliestAvgUnit !== 0
+    ? (((latestAvgUnit - earliestAvgUnit) / earliestAvgUnit) * 100).toFixed(2)
+    : null;
+
+  const latestAvgPrice   = latest.avg_price   != null ? Number(latest.avg_price)   : null;
+  const earliestAvgPrice = earliest.avg_price != null ? Number(earliest.avg_price) : null;
+  const priceChange = latestAvgPrice != null && earliestAvgPrice != null && earliestAvgPrice !== 0
+    ? (((latestAvgPrice - earliestAvgPrice) / earliestAvgPrice) * 100).toFixed(2)
+    : null;
+
+  // 计算挂牌量趋势
+  const latestListings  = latest.unique_listings;
+  const earliestListings = earliest.unique_listings;
+  const listingsChange = earliestListings !== 0
+    ? (((latestListings - earliestListings) / earliestListings) * 100).toFixed(2)
+    : null;
+
+  // 找单价历史最高/最低
+  const allAvgUnits = rows
+    .map(r => r.avg_unit_price != null ? Number(r.avg_unit_price) * 10000 : null)
+    .filter((v): v is number => v != null);
+  const maxAvgUnit = allAvgUnits.length ? Math.max(...allAvgUnits) : null;
+  const minAvgUnit = allAvgUnits.length ? Math.min(...allAvgUnits) : null;
+
+  // 最近 7 天数据（降序前 7 行）
+  const recent7 = rows.slice(0, Math.min(7, rows.length));
+  const recent7Table = recent7.map(r =>
+    `  ${r.stat_date}  挂牌量:${r.unique_listings}套  均价:${fmtUnitPrice(r.avg_unit_price)}元/平  均总价:${fmtPrice(r.avg_price)}万`
+  ).join('\n');
+
+  // 全部数据摘要（每行一条，降序）
+  const allDataTable = rows.map(r =>
+    `  ${r.stat_date}  ${r.unique_listings}套  ${fmtUnitPrice(r.avg_unit_price)}元/平  中位:${fmtUnitPrice(r.median_unit_price)}元/平  均总价:${fmtPrice(r.avg_price)}万`
+  ).join('\n');
+
+  const typeNote = houseType ? `（户型：${houseType}）` : '（全部户型）';
+
+  // 面积区间描述
+  const areaNote = (() => {
+    if (!areaEnabled) return '不限';
+    const mn = parseFloat(areaMin);
+    const mx = parseFloat(areaMax);
+    if (!isNaN(mn) && !isNaN(mx)) return `${mn} ~ ${mx} ㎡`;
+    if (!isNaN(mn)) return `≥ ${mn} ㎡`;
+    if (!isNaN(mx)) return `≤ ${mx} ㎡`;
+    return '不限';
+  })();
+
+  // 过滤条件描述
+  const filterNotes: string[] = [];
+  if (excludeBasement) filterNotes.push('已排除地下室');
+  if (excludeLowFloor) filterNotes.push('已排除共3层楼');
+  if (excludeTwoFloor) filterNotes.push('已排除共2层楼');
+  if (excludeOneFloor) filterNotes.push('已排除共1层楼');
+  const filterNote = filterNotes.length > 0 ? filterNotes.join('、') : '无特殊过滤';
+
+  return `你是一位专业的房产分析师，请根据以下真实的房产挂牌数据，对"${community}"小区${typeNote}的价格走势进行深度分析，并给出未来价格预测。
+
+## 数据概况
+- 小区名称：${community}
+- 户型筛选：${houseType || '全部户型'}
+- 面积范围：${areaNote}
+- 数据过滤：${filterNote}
+- 统计天数：${rows.length} 天（${earliest.stat_date} ~ ${latest.stat_date}）
+
+## 当前最新数据（${latest.stat_date}）
+- 挂牌量：${latestListings} 套
+- 平均单价：${fmtUnitPrice(latest.avg_unit_price)} 元/平
+- 单价区间：${fmtUnitPrice(latest.min_unit_price)} ~ ${fmtUnitPrice(latest.max_unit_price)} 元/平
+- 单价中位数：${fmtUnitPrice(latest.median_unit_price)} 元/平
+- 平均总价：${fmtPrice(latest.avg_price)} 万元
+- 总价区间：${fmtPrice(latest.min_price)} ~ ${fmtPrice(latest.max_price)} 万元
+- 总价中位数：${fmtPrice(latest.median_price)} 万元
+
+## 历史对比（起始日期 ${earliest.stat_date}）
+- 起始平均单价：${fmtUnitPrice(earliest.avg_unit_price)} 元/平
+- 起始平均总价：${fmtPrice(earliest.avg_price)} 万元
+- 起始挂牌量：${earliestListings} 套
+${unitPriceChange != null ? `- 单价变化幅度：${Number(unitPriceChange) >= 0 ? '+' : ''}${unitPriceChange}%` : ''}
+${priceChange    != null ? `- 总价变化幅度：${Number(priceChange)    >= 0 ? '+' : ''}${priceChange}%` : ''}
+${listingsChange != null ? `- 挂牌量变化：${Number(listingsChange) >= 0 ? '+' : ''}${listingsChange}%` : ''}
+${maxAvgUnit != null ? `- 区间内均价最高：${Math.round(maxAvgUnit).toLocaleString()} 元/平` : ''}
+${minAvgUnit != null ? `- 区间内均价最低：${Math.round(minAvgUnit).toLocaleString()} 元/平` : ''}
+
+## 最近 ${recent7.length} 天每日数据
+${recent7Table}
+
+## 完整历史数据（${rows.length} 条，最新在前）
+${allDataTable}
+
+---
+
+请基于以上数据完成以下分析：
+
+1. **价格走势分析**：分析该小区近期单价、总价的变化趋势（上涨/下跌/横盘），计算关键涨跌幅，识别价格拐点。
+
+2. **挂牌量分析**：挂牌量变化对供需关系的影响，判断当前市场是供大于求还是供不应求。
+
+3. **价格合理性评估**：结合均价、中位价的偏差，判断是否存在高价/低价异常房源，评估当前价格是否合理。
+
+4. **未来趋势预测**：根据近期走势，给出未来 1~3 个月的价格区间预测（保守/中性/乐观三种情景）。
+
+5. **购房建议**：针对有意向购买该小区的买家，给出具体的时机建议和参考成交价格区间。
+
+请以结构化报告格式输出，数据引用要具体，结论要有依据。`;
+}
+
+// ─────────────────────────────────────────────
 // 主组件
 // ─────────────────────────────────────────────
 export default function StatsPanel() {
@@ -502,6 +713,9 @@ export default function StatsPanel() {
 
   // 图表弹窗
   const [showChart, setShowChart] = useState(false);
+
+  // Prompt 弹窗
+  const [showPrompt, setShowPrompt] = useState(false);
 
   // 小区搜索 combobox
   const [communityKeyword, setCommunityKeyword] = useState('');
@@ -614,6 +828,14 @@ export default function StatsPanel() {
       {/* 图表弹窗 */}
       {showChart && rows.length > 0 && (
         <ChartModal rows={rows} community={community} onClose={() => setShowChart(false)} />
+      )}
+
+      {/* Prompt 弹窗 */}
+      {showPrompt && rows.length > 0 && (
+        <PromptModal
+          prompt={buildAnalysisPrompt(community, { houseType, areaEnabled, areaMin, areaMax, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor }, rows, fmtUnitPrice, fmtPrice)}
+          onClose={() => setShowPrompt(false)}
+        />
       )}
 
       {/* 筛选条件区 */}
@@ -797,6 +1019,16 @@ export default function StatsPanel() {
             title={rows.length === 0 ? '请先查询统计数据' : '查看价格趋势图表'}
           >
             📈 图表展示
+          </button>
+
+          {/* 生成分析 Prompt 按钮 */}
+          <button
+            onClick={() => setShowPrompt(true)}
+            disabled={rows.length === 0}
+            className="px-5 py-2 bg-violet-500 text-white text-sm font-semibold rounded-md hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            title={rows.length === 0 ? '请先查询统计数据' : '生成 AI 价格预测分析 Prompt'}
+          >
+            🤖 生成分析Prompt
           </button>
         </div>
       </div>
