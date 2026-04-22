@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
         try {
           // 认证
           sendLog('正在进行身份认证...');
-          const auth = new AuthManager(host);
+          const auth = new AuthManager(host, finalDbPath);
           await auth.ensureLogin(context, page);
           sendLog('✓ 身份认证完成');
 

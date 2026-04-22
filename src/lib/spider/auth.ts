@@ -11,9 +11,11 @@ import { getDb } from '../db/database';
 
 export class AuthManager {
   private host: string;
+  private dbPath?: string;
 
-  constructor(host: string) {
+  constructor(host: string, dbPath?: string) {
     this.host = host;
+    this.dbPath = dbPath;
   }
 
   /**
@@ -123,7 +125,7 @@ export class AuthManager {
    */
   private async loadCookies(context: BrowserContext): Promise<boolean> {
     try {
-      const db = getDb();
+      const db = getDb(this.dbPath);
       const row = db
         .prepare('SELECT cookie FROM bk_cookie WHERE host = ? LIMIT 1')
         .get(this.host) as { cookie: string } | undefined;
@@ -152,7 +154,7 @@ export class AuthManager {
   private async saveCookies(context: BrowserContext): Promise<void> {
     const cookies = await context.cookies();
     const cookieJson = JSON.stringify({ cookies });
-    const db = getDb();
+    const db = getDb(this.dbPath);
     const now = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
 
     db.prepare(`
