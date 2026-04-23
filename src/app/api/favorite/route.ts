@@ -1,7 +1,7 @@
 /**
  * 房源收藏 API
  * GET  /api/favorite?community=xxx&detailUrl=xxx&page=1&pageSize=50
- * POST /api/favorite   body: { listing, note }
+ * POST /api/favorite   body: { listing }   备注统一存 house_note 表
  */
 
 import { NextRequest } from 'next/server';
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { listing, note } = body as {
+    const { listing } = body as {
       listing: {
         title?: string;
         header_image?: string | null;
@@ -78,7 +78,6 @@ export async function POST(request: NextRequest) {
         unit_price?: number | null;
         detail_url?: string | null;
       };
-      note?: string;
     };
 
     if (!listing?.detail_url) {
@@ -89,16 +88,15 @@ export async function POST(request: NextRequest) {
     const db  = getDb(getDBPath());
     const now = getBeijingNow();
 
-    // UPSERT：相同 detail_url 则更新 note 和 updated_at
+    // UPSERT：相同 detail_url 则更新基本信息和 updated_at（备注统一存 house_note 表）
     const stmt = db.prepare(`
       INSERT INTO house_favorite
         (title, header_image, header_image_desc, province, city, district,
          community, community_url, floor_info, build_year, house_type,
-         area, orientation, total_price, unit_price, detail_url, note,
+         area, orientation, total_price, unit_price, detail_url,
          created_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(detail_url) DO UPDATE SET
-        note       = excluded.note,
         updated_at = excluded.updated_at
     `);
 
@@ -119,7 +117,6 @@ export async function POST(request: NextRequest) {
       listing.total_price       ?? null,
       listing.unit_price        ?? null,
       listing.detail_url,
-      note ?? null,
       now,
       now,
     );

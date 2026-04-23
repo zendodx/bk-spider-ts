@@ -152,6 +152,18 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_house_favorite_detail_url ON house_favorite (detail_url);
     CREATE INDEX IF NOT EXISTS idx_house_favorite_community ON house_favorite (community);
   `);
+
+  // 房源备注表（独立于收藏，任意房源均可记录备注）
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS house_note (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      detail_url TEXT    NOT NULL,
+      note       TEXT    NOT NULL DEFAULT '',
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_house_note_detail_url ON house_note (detail_url);
+  `);
 }
 
 /**

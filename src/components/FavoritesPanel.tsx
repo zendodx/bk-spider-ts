@@ -19,23 +19,25 @@ interface FavoriteRow {
   total_price: number | null;
   unit_price: number | null;
   detail_url: string | null;
-  note: string | null;
   created_at: string;
   updated_at: string;
 }
 
 // ===== 编辑备注弹窗 =====
+const NOTE_TEMPLATE = '- 基本：\n- 装修：\n- 抵押：\n- 学区：\n- 价格：\n- 缺点：\n- 优点：';
+
 function EditNoteModal({
   row,
+  existingNote,
   onClose,
   onSaved,
 }: {
   row: FavoriteRow;
+  existingNote: string | null;
   onClose: () => void;
-  onSaved: (id: number, note: string) => void;
+  onSaved: (detailUrl: string, note: string) => void;
 }) {
-  const NOTE_TEMPLATE = '- 楼层：\n\n- 装修：\n\n- 楼面：\n\n- 抵押：\n\n- 学区：\n\n- 成交价：';
-  const [note, setNote]     = useState(row.note ?? NOTE_TEMPLATE);
+  const [note, setNote]     = useState(existingNote ?? NOTE_TEMPLATE);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -50,17 +52,18 @@ function EditNoteModal({
   };
 
   const handleSave = async () => {
+    if (!row.detail_url) return;
     setSaving(true);
     setError('');
     try {
-      const res = await fetch(`/api/favorite/${row.id}`, {
-        method: 'PATCH',
+      const res = await fetch('/api/listings/note', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ note }),
+        body: JSON.stringify({ detailUrl: row.detail_url, note }),
       });
       const json = await res.json();
       if (json.success) {
-        onSaved(row.id, note);
+        onSaved(row.detail_url, note);
         onClose();
       } else {
         setError(json.error ?? '保存失败');
@@ -419,6 +422,9 @@ export default function FavoritesPanel() {
   const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
   const [deletingId, setDeletingId]               = useState<number | null>(null);
 
+  // 备注 map：detail_url -> note（从 house_note 表关联读取）
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+
   // PDF 导出状态
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -467,9 +473,21 @@ export default function FavoritesPanel() {
       const res  = await fetch(`/api/favorite?${params}`);
       const json = await res.json();
       if (json.success) {
-        setAllRows(json.data ?? []);
+        const data: FavoriteRow[] = json.data ?? [];
+        setAllRows(data);
         setTotal(json.total ?? 0);
         setPage(p);
+        // 批量拉取备注（并发，失败静默）
+        const urls = data.map(r => r.detail_url).filter(Boolean) as string[];
+        const noteResult: Record<string, string> = {};
+        await Promise.all(urls.map(async (url) => {
+          try {
+            const r = await fetch(`/api/listings/note?detailUrl=${encodeURIComponent(url)}`);
+            const j = await r.json();
+            if (j.success && j.note) noteResult[url] = j.note;
+          } catch { /* ignore */ }
+        }));
+        setNoteMap(noteResult);
       } else {
         setError(json.error ?? '查询失败');
       }
@@ -507,8 +525,8 @@ export default function FavoritesPanel() {
     }
   };
 
-  const handleNoteSaved = (id: number, note: string) => {
-    setAllRows(prev => prev.map(r => r.id === id ? { ...r, note } : r));
+  const handleNoteSaved = (detailUrl: string, note: string) => {
+    setNoteMap(prev => ({ ...prev, [detailUrl]: note }));
   };
 
   // ===== 前端过滤 + 排序（户型、楼层过滤、排序）=====
@@ -639,6 +657,7 @@ export default function FavoritesPanel() {
       {editModal && (
         <EditNoteModal
           row={editModal}
+          existingNote={editModal.detail_url ? noteMap[editModal.detail_url] ?? null : null}
           onClose={() => setEditModal(null)}
           onSaved={handleNoteSaved}
         />
@@ -929,7 +948,6 @@ export default function FavoritesPanel() {
                     <th className="px-4 py-3 text-right font-semibold text-gray-600 whitespace-nowrap bg-blue-50">
                       总价<br /><span className="font-normal text-gray-400">(万)</span>
                     </th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap" style={{ minWidth: 160 }}>备注</th>
                     <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">收藏时间</th>
                     <th className="px-3 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">操作</th>
                   </tr>
@@ -972,20 +990,6 @@ export default function FavoritesPanel() {
                       <td className="px-4 py-2.5 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
                         {fmtPrice(row.total_price)}
                       </td>
-                      {/* 备注列：可点击编辑 */}
-                      <td className="px-4 py-2.5 text-gray-600 max-w-[200px]">
-                        <button
-                          onClick={() => setEditModal(row)}
-                          className="text-left w-full group"
-                          title="点击编辑备注"
-                        >
-                          {row.note ? (
-                            <span className="block truncate group-hover:text-yellow-700 transition-colors">{row.note}</span>
-                          ) : (
-                            <span className="text-gray-300 text-xs group-hover:text-yellow-400 transition-colors italic">点击添加备注...</span>
-                          )}
-                        </button>
-                      </td>
                       {/* 收藏时间 */}
                       <td className="px-4 py-2.5 text-center text-gray-400 whitespace-nowrap">{row.created_at}</td>
                       {/* 操作列 */}
@@ -1013,10 +1017,14 @@ export default function FavoritesPanel() {
                           </button>
                           <button
                             onClick={() => setEditModal(row)}
-                            className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors"
-                            title="编辑备注"
+                            className={`inline-flex items-center px-2 py-1 text-xs rounded transition-colors ${
+                              row.detail_url && noteMap[row.detail_url]
+                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                : 'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-700'
+                            }`}
+                            title={row.detail_url && noteMap[row.detail_url] ? '查看/编辑备注' : '添加备注'}
                           >
-                            📝
+                            {row.detail_url && noteMap[row.detail_url] ? '📝' : '📄'}
                           </button>
                           <button
                             onClick={() => handleDelete(row.id)}

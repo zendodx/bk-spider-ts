@@ -266,6 +266,180 @@ function PriceHistoryModal({
   );
 }
 
+// ===== 房源备注弹窗组件 =====
+const NOTE_TEMPLATE = (_floorInfo?: string | null) =>
+  `- 基本：\n- 装修：\n- 抵押：\n- 学区：\n- 价格：\n- 缺点：\n- 优点：`;
+
+function NoteModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: ListingRow;
+  onClose: () => void;
+  onSaved: (detailUrl: string, note: string) => void;
+}) {
+  const [note, setNote]       = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [error, setError]     = useState('');
+
+  // 加载已有备注
+  useEffect(() => {
+    if (!row.detail_url) { setLoading(false); return; }
+    fetch(`/api/listings/note?detailUrl=${encodeURIComponent(row.detail_url)}`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.success) {
+          setNote(json.note ?? NOTE_TEMPLATE(row.floor_info));
+        } else {
+          setNote(NOTE_TEMPLATE(row.floor_info));
+        }
+      })
+      .catch(() => setNote(NOTE_TEMPLATE(row.floor_info)))
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const handleSave = async () => {
+    if (!row.detail_url) return;
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/listings/note', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ detailUrl: row.detail_url, note }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSaved(true);
+        onSaved(row.detail_url, note);
+        setTimeout(() => onClose(), 600);
+      } else {
+        setError(json.error ?? '保存失败');
+      }
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fmtUnit  = (v: number | null) => v == null ? '-' : `${(Number(v) * 10000).toFixed(0)} 元/平`;
+  const fmtPrice = (v: number | null) => v == null ? '-' : `${Number(v).toFixed(2)} 万`;
+  const fmtArea  = (v: number | null) => v == null ? '-' : `${Number(v).toFixed(1)} ㎡`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[88vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-gray-700">📝 房源备注</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none">✕</button>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+          {/* 房源基本信息卡 */}
+          <div className="bg-gray-50 rounded-lg px-4 py-3 space-y-1.5">
+            <p className="text-sm font-medium text-gray-800 leading-snug">{row.title || row.community}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <span>🏘️ {row.community}</span>
+              {row.house_type && <span>🏠 {row.house_type}</span>}
+              {row.area != null && <span>📐 {fmtArea(row.area)}</span>}
+              {row.floor_info && <span>🏢 {row.floor_info}</span>}
+              {row.orientation && <span>🧭 {row.orientation}</span>}
+              {row.build_year && <span>📅 {row.build_year}年建</span>}
+            </div>
+            <div className="flex gap-4 text-xs mt-1">
+              <span className="text-orange-600 font-semibold">{fmtUnit(row.unit_price)}</span>
+              <span className="text-blue-600 font-semibold">{fmtPrice(row.total_price)}</span>
+              {row.detail_url && (
+                <a href={row.detail_url} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline truncate max-w-[200px]">
+                  🔗 查看详情
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* 备注输入区 */}
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-gray-400">
+              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              加载备注中...
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-gray-600">备注内容</label>
+                <button
+                  type="button"
+                  onClick={() => setNote(NOTE_TEMPLATE(row.floor_info))}
+                  className="text-xs text-gray-400 hover:text-blue-500 transition-colors"
+                >
+                  重置模板
+                </button>
+              </div>
+              <textarea
+                value={note}
+                onChange={e => { setNote(e.target.value); setSaved(false); }}
+                rows={10}
+                maxLength={2000}
+                className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y font-mono leading-relaxed"
+                placeholder="填写备注信息..."
+              />
+              <div className="text-right text-xs text-gray-400 mt-0.5">{note.length}/2000</div>
+            </div>
+          )}
+
+          {error && (
+            <div className="px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">❌ {error}</div>
+          )}
+        </div>
+
+        {/* 底部按钮 */}
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || saved || loading}
+            className={`px-6 py-2 text-sm font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+              saved
+                ? 'bg-green-500 text-white cursor-default'
+                : 'bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+            }`}
+          >
+            {saved ? '✓ 已保存' : saving ? '保存中...' : '💾 保存备注'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== 取消收藏确认弹窗组件 =====
 function UnfavoriteConfirmModal({
   onConfirm,
@@ -328,15 +502,15 @@ function UnfavoriteConfirmModal({
 // ===== 收藏弹窗组件 =====
 function FavoriteModal({
   row,
+  existingNote,
   onClose,
   onSaved,
 }: {
   row: ListingRow;
+  existingNote?: string;
   onClose: () => void;
   onSaved?: (id: number, detailUrl: string) => void;
 }) {
-  const NOTE_TEMPLATE = '- 基本：\n- 装修：\n- 抵押：\n- 学区：\n- 价格：\n- 缺点：\n- 优点：';
-  const [note, setNote]       = useState(NOTE_TEMPLATE);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [error, setError]     = useState('');
@@ -372,7 +546,7 @@ function FavoriteModal({
       const res = await fetch('/api/favorite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listing: row, note }),
+        body: JSON.stringify({ listing: row, note: existingNote ?? null }),
       });
       const json = await res.json();
       if (json.success) {
@@ -453,19 +627,18 @@ function FavoriteModal({
             </div>
           )}
 
-          {/* 备注输入框 */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">备注（可选）</label>
-            <textarea
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              placeholder="填写备注，如：价格合适、位置好..."
-              rows={10}
-              maxLength={1000}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-400 resize-none"
-            />
-            <div className="text-right text-xs text-gray-400 mt-0.5">{note.length}/1000</div>
-          </div>
+          {/* 备注预览（只读，来自备注表） */}
+          {existingNote ? (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">备注（将一并保存）</label>
+              <pre className="w-full px-3 py-2.5 text-xs bg-amber-50 border border-amber-200 rounded-md whitespace-pre-wrap font-mono leading-relaxed text-gray-700 max-h-40 overflow-auto">{existingNote}</pre>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-md text-xs text-gray-400">
+              <span>📄</span>
+              <span>暂无备注，可收藏后通过备注按钮（📄）补充</span>
+            </div>
+          )}
 
           {/* 错误信息 */}
           {error && (
@@ -1022,14 +1195,13 @@ export default function ListingsPanel() {
   // 价格历史弹窗
   const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
 
-  // 收藏弹窗
-  const [favoriteModal, setFavoriteModal] = useState<ListingRow | null>(null);
-
-  // 取消收藏确认弹窗
-  const [unfavoriteConfirm, setUnfavoriteConfirm] = useState<{ detailUrl: string; favoriteId: number } | null>(null);
-
   // Prompt 弹窗
   const [showPrompt, setShowPrompt] = useState(false);
+
+  // 备注弹窗
+  const [noteModal, setNoteModal] = useState<ListingRow | null>(null);
+  // 有备注的 detail_url -> 备注内容（缓存，用于列表图标显示）
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
 
   // 收藏状态：detail_url -> favorite_id（已收藏才有值）
   const [favoritedMap, setFavoritedMap] = useState<Record<string, number>>({});
@@ -1139,6 +1311,18 @@ export default function ListingsPanel() {
         } else {
           setFavoritedMap({});
         }
+        // 批量拉取备注（逐条 GET，失败静默）
+        const noteResult: Record<string, string> = {};
+        await Promise.all(
+          urls.map(async (url) => {
+            try {
+              const r = await fetch(`/api/listings/note?detailUrl=${encodeURIComponent(url)}`);
+              const j = await r.json();
+              if (j.success && j.note) noteResult[url] = j.note;
+            } catch { /* ignore */ }
+          })
+        );
+        setNoteMap(noteResult);
       } else {
         setError(json.error ?? '查询失败');
       }
@@ -1148,6 +1332,28 @@ export default function ListingsPanel() {
       setLoading(false);
     }
   }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, sortKey, limit, areaEnabled, areaMin, areaMax]);
+
+  // 收藏
+  const handleFavorite = useCallback(async (row: ListingRow) => {
+    if (!row.detail_url) return;
+    const { detail_url } = row;
+    setFavoritingUrls(prev => new Set(prev).add(detail_url));
+    try {
+      const res  = await fetch('/api/favorite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listing: row }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setFavoritedMap(prev => ({ ...prev, [detail_url]: Number(json.id) }));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFavoritingUrls(prev => { const s = new Set(prev); s.delete(detail_url); return s; });
+    }
+  }, []);
 
   // 取消收藏
   const handleUnfavorite = useCallback(async (detailUrl: string, favoriteId: number) => {
@@ -1206,15 +1412,13 @@ export default function ListingsPanel() {
         />
       )}
 
-      {/* ===== 收藏弹窗 ===== */}
-      {favoriteModal && (
-        <FavoriteModal
-          row={favoriteModal}
-          onClose={() => setFavoriteModal(null)}
-          onSaved={(id, detailUrl) => {
-            if (detailUrl) {
-              setFavoritedMap(prev => ({ ...prev, [detailUrl]: id }));
-            }
+      {/* ===== 备注弹窗 ===== */}
+      {noteModal && (
+        <NoteModal
+          row={noteModal}
+          onClose={() => setNoteModal(null)}
+          onSaved={(detailUrl, note) => {
+            setNoteMap(prev => ({ ...prev, [detailUrl]: note }));
           }}
         />
       )}
@@ -1229,17 +1433,6 @@ export default function ListingsPanel() {
             fmtUnit, fmtPrice, fmtArea
           )}
           onClose={() => setShowPrompt(false)}
-        />
-      )}
-
-      {/* ===== 取消收藏确认弹窗 ===== */}
-      {unfavoriteConfirm && (
-        <UnfavoriteConfirmModal
-          onConfirm={() => {
-            handleUnfavorite(unfavoriteConfirm.detailUrl, unfavoriteConfirm.favoriteId);
-            setUnfavoriteConfirm(null);
-          }}
-          onCancel={() => setUnfavoriteConfirm(null)}
         />
       )}
 
@@ -1602,7 +1795,7 @@ export default function ListingsPanel() {
                           </button>
                           {row.detail_url && favoritedMap[row.detail_url] !== undefined ? (
                             <button
-                              onClick={() => setUnfavoriteConfirm({ detailUrl: row.detail_url!, favoriteId: favoritedMap[row.detail_url!] })}
+                              onClick={() => handleUnfavorite(row.detail_url!, favoritedMap[row.detail_url!])}
                               disabled={favoritingUrls.has(row.detail_url)}
                               className="inline-flex items-center px-2 py-1 bg-gray-200 text-gray-600 text-xs rounded hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-50"
                               title="取消收藏"
@@ -1611,13 +1804,26 @@ export default function ListingsPanel() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => setFavoriteModal(row)}
-                              className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors"
+                              onClick={() => handleFavorite(row)}
+                              disabled={favoritingUrls.has(row.detail_url ?? '')}
+                              className="inline-flex items-center px-2 py-1 bg-yellow-400 text-gray-900 text-xs rounded hover:bg-yellow-500 transition-colors disabled:opacity-50"
                               title="收藏该房源"
                             >
-                              ⭐
+                              {favoritingUrls.has(row.detail_url ?? '') ? '…' : '⭐'}
                             </button>
                           )}
+                          {/* 备注按钮 */}
+                          <button
+                            onClick={() => setNoteModal(row)}
+                            className={`inline-flex items-center px-2 py-1 text-xs rounded transition-colors ${
+                              row.detail_url && noteMap[row.detail_url]
+                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                : 'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-700'
+                            }`}
+                            title={row.detail_url && noteMap[row.detail_url] ? '查看/编辑备注' : '添加备注'}
+                          >
+                            {row.detail_url && noteMap[row.detail_url] ? '📝' : '📄'}
+                          </button>
                         </div>
                       </td>
                     </tr>
