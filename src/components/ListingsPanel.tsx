@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ReferenceLine, ResponsiveContainer, Legend,
+} from 'recharts';
 
 interface ListingRow {
   id: number;
@@ -1103,6 +1107,187 @@ function DatePickerWithDots({
   );
 }
 
+// ===== 价格分布图表弹窗 =====
+interface ChartDataItem {
+  index: number;
+  label: string;
+  unitPrice: number | null;
+  totalPrice: number | null;
+}
+interface ChartStats { avg: number | null; median: number | null; }
+
+function PriceChartModal({
+  chartData,
+  unitStats,
+  priceStats,
+  community,
+  onClose,
+}: {
+  chartData: ChartDataItem[];
+  unitStats: ChartStats;
+  priceStats: ChartStats;
+  community: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-5xl mx-4 flex flex-col max-h-[85vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-gray-700">📊 价格分布</span>
+            {community && <span className="text-xs text-gray-400">{community}</span>}
+            <span className="text-xs text-gray-400">共 {chartData.length} 条 · 按当前排序</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none">✕</button>
+        </div>
+
+        {/* 图表区 */}
+        <div className="flex-1 overflow-auto p-4">
+          <div className="grid grid-cols-2 gap-4 divide-x divide-gray-100">
+            {/* 单价折线图 */}
+            <div className="pr-4">
+              <div className="text-xs font-medium text-orange-600 mb-2">单价分布（元/平）</div>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData} margin={{ top: 12, right: 20, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="index"
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                    label={{ value: '序号', position: 'insideBottomRight', offset: -4, fontSize: 10, fill: '#9ca3af' }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                    tickFormatter={v => `${(v / 10000).toFixed(1)}w`}
+                    width={46}
+                  />
+                  <Tooltip
+                    formatter={(value: unknown) => {
+                      const v = Number(value);
+                      return [`${isNaN(v) ? '-' : v.toLocaleString()} 元/平`, '单价'];
+                    }}
+                    labelFormatter={(label: unknown) => {
+                      const idx = Number(label);
+                      const d = chartData[idx - 1];
+                      return d ? `#${idx} ${d.label.slice(0, 24)}` : `#${idx}`;
+                    }}
+                    contentStyle={{ fontSize: 11 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line
+                    type="monotone"
+                    dataKey="unitPrice"
+                    name="单价"
+                    stroke="#f97316"
+                    strokeWidth={1.5}
+                    dot={chartData.length <= 80 ? { r: 2, fill: '#f97316' } : false}
+                    activeDot={{ r: 4 }}
+                    connectNulls
+                  />
+                  {unitStats.avg != null && (
+                    <ReferenceLine
+                      y={unitStats.avg}
+                      stroke="#fb923c"
+                      strokeDasharray="6 3"
+                      label={{ value: `均值 ${unitStats.avg.toLocaleString()}`, position: 'insideTopRight', fontSize: 10, fill: '#fb923c' }}
+                    />
+                  )}
+                  {unitStats.median != null && (
+                    <ReferenceLine
+                      y={unitStats.median}
+                      stroke="#dc2626"
+                      strokeDasharray="3 3"
+                      label={{ value: `中位 ${unitStats.median.toLocaleString()}`, position: 'insideBottomRight', fontSize: 10, fill: '#dc2626' }}
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+              {/* 统计摘要 */}
+              <div className="flex gap-4 mt-2 text-xs text-gray-500 justify-center">
+                {unitStats.avg != null && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-orange-400"></span>均值 {unitStats.avg.toLocaleString()} 元/平</span>}
+                {unitStats.median != null && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-red-500"></span>中位 {unitStats.median.toLocaleString()} 元/平</span>}
+              </div>
+            </div>
+
+            {/* 总价折线图 */}
+            <div className="pl-4">
+              <div className="text-xs font-medium text-blue-600 mb-2">总价分布（万元）</div>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData} margin={{ top: 12, right: 20, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="index"
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                    label={{ value: '序号', position: 'insideBottomRight', offset: -4, fontSize: 10, fill: '#9ca3af' }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                    tickFormatter={v => `${v}w`}
+                    width={46}
+                  />
+                  <Tooltip
+                    formatter={(value: unknown) => {
+                      const v = Number(value);
+                      return [`${isNaN(v) ? '-' : v} 万`, '总价'];
+                    }}
+                    labelFormatter={(label: unknown) => {
+                      const idx = Number(label);
+                      const d = chartData[idx - 1];
+                      return d ? `#${idx} ${d.label.slice(0, 24)}` : `#${idx}`;
+                    }}
+                    contentStyle={{ fontSize: 11 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line
+                    type="monotone"
+                    dataKey="totalPrice"
+                    name="总价"
+                    stroke="#3b82f6"
+                    strokeWidth={1.5}
+                    dot={chartData.length <= 80 ? { r: 2, fill: '#3b82f6' } : false}
+                    activeDot={{ r: 4 }}
+                    connectNulls
+                  />
+                  {priceStats.avg != null && (
+                    <ReferenceLine
+                      y={priceStats.avg}
+                      stroke="#60a5fa"
+                      strokeDasharray="6 3"
+                      label={{ value: `均值 ${priceStats.avg}w`, position: 'insideTopRight', fontSize: 10, fill: '#3b82f6' }}
+                    />
+                  )}
+                  {priceStats.median != null && (
+                    <ReferenceLine
+                      y={priceStats.median}
+                      stroke="#7c3aed"
+                      strokeDasharray="3 3"
+                      label={{ value: `中位 ${priceStats.median}w`, position: 'insideBottomRight', fontSize: 10, fill: '#7c3aed' }}
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+              {/* 统计摘要 */}
+              <div className="flex gap-4 mt-2 text-xs text-gray-500 justify-center">
+                {priceStats.avg != null && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-blue-400"></span>均值 {priceStats.avg}w</span>}
+                {priceStats.median != null && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-violet-500"></span>中位 {priceStats.median}w</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== 图片预览弹窗组件 =====
 function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   // 点击遮罩关闭
@@ -1198,8 +1383,10 @@ export default function ListingsPanel() {
   // 价格历史弹窗
   const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
 
-  // Prompt 弹窗
-  const [showPrompt, setShowPrompt] = useState(false);
+// Prompt 弹窗
+const [showPrompt, setShowPrompt] = useState(false);
+// 价格分布图表弹窗
+const [showChart, setShowChart] = useState(false);
 
   // 备注弹窗
   const [noteModal, setNoteModal] = useState<ListingRow | null>(null);
@@ -1396,6 +1583,31 @@ export default function ListingsPanel() {
     return isNaN(n) ? '-' : n.toFixed(1);
   };
 
+  // ===== 图表数据计算 =====
+  const chartData = rows
+    .filter(r => r.unit_price != null || r.total_price != null)
+    .map((r, i) => ({
+      index: i + 1,
+      label: r.title || r.community,
+      unitPrice: r.unit_price != null ? Math.round(Number(r.unit_price) * 10000) : null,
+      totalPrice: r.total_price != null ? Number(Number(r.total_price).toFixed(2)) : null,
+    }));
+
+  const calcStats = (vals: (number | null)[]) => {
+    const arr = vals.filter((v): v is number => v != null);
+    if (arr.length === 0) return { avg: null, median: null };
+    const avg = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0
+      ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+      : sorted[mid];
+    return { avg, median };
+  };
+
+  const unitStats  = calcStats(chartData.map(d => d.unitPrice));
+  const priceStats = calcStats(chartData.map(d => d.totalPrice));
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* ===== 图片弹窗 ===== */}
@@ -1424,6 +1636,17 @@ export default function ListingsPanel() {
           onSaved={(detailUrl, note) => {
             setNoteMap(prev => ({ ...prev, [detailUrl]: note }));
           }}
+        />
+      )}
+
+      {/* ===== 价格分布图表弹窗 ===== */}
+      {showChart && chartData.length > 0 && (
+        <PriceChartModal
+          chartData={chartData}
+          unitStats={unitStats}
+          priceStats={priceStats}
+          community={community}
+          onClose={() => setShowChart(false)}
         />
       )}
 
@@ -1654,6 +1877,16 @@ export default function ListingsPanel() {
                 查询中...
               </>
             ) : '🔍 查询房源'}
+          </button>
+
+          {/* 价格分布图表按钮 */}
+          <button
+            onClick={() => setShowChart(true)}
+            disabled={rows.length === 0}
+            className="px-5 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-md hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            title={rows.length === 0 ? '请先查询房源数据' : '查看价格分布图表'}
+          >
+            📊 价格分布
           </button>
 
           {/* 生成分析 Prompt 按钮 */}
