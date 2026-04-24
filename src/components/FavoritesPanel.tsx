@@ -394,6 +394,7 @@ export default function FavoritesPanel() {
   const [excludeLowFloor, setExcludeLowFloor]   = useState(true);
   const [excludeTwoFloor, setExcludeTwoFloor]   = useState(false);
   const [excludeOneFloor, setExcludeOneFloor]   = useState(false);
+  const [floorTypes, setFloorTypes]             = useState<string[]>([]);
 
   // 面积区间（可选，前端过滤）
   const [areaEnabled, setAreaEnabled] = useState(false);
@@ -549,6 +550,10 @@ export default function FavoritesPanel() {
     }
     if (excludeOneFloor) {
       filtered = filtered.filter(r => !/共1.层/.test(r.floor_info ?? ''));
+    }
+    // 楼层类型筛选
+    if (floorTypes.length > 0 && floorTypes.length < 3) {
+      filtered = filtered.filter(r => floorTypes.some(ft => r.floor_info?.includes(ft)));
     }
     // 面积区间
     if (areaEnabled) {
@@ -790,6 +795,24 @@ export default function FavoritesPanel() {
                 />
               </div>
             )}
+          </div>
+
+          {/* 楼层类型筛选 */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-gray-600">楼层筛选</label>
+            {(['低楼层', '中楼层', '高楼层'] as const).map(ft => (
+              <label key={ft} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={floorTypes.includes(ft)}
+                  onChange={e => setFloorTypes(prev =>
+                    e.target.checked ? [...prev, ft] : prev.filter(v => v !== ft)
+                  )}
+                  className="text-yellow-500"
+                />
+                <span className="text-sm text-gray-700">{ft}</span>
+              </label>
+            ))}
           </div>
 
           {/* 过滤条件 */}

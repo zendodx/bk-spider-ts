@@ -43,6 +43,8 @@ export async function GET(request: NextRequest) {
     const excludeLowFloor  = searchParams.get('excludeLowFloor') !== 'false';
     const excludeTwoFloor  = searchParams.get('excludeTwoFloor') === 'true';
     const excludeOneFloor  = searchParams.get('excludeOneFloor') === 'true';
+    // 楼层类型筛选：逗号分隔，如 "低楼层,中楼层"；空字符串=不过滤
+    const floorTypes       = (searchParams.get('floorTypes') ?? '').split(',').map(s => s.trim()).filter(Boolean);
     const areaMin        = parseFloat(searchParams.get('areaMin') ?? '');
     const areaMax        = parseFloat(searchParams.get('areaMax') ?? '');
     // 排序字段白名单，防注入
@@ -92,6 +94,13 @@ export async function GET(request: NextRequest) {
 
     if (excludeOneFloor) {
       conditions.push("floor_info NOT LIKE '%共1%层%'");
+    }
+
+    // 楼层类型筛选：floor_info LIKE '%低楼层%' OR '%中楼层%' OR '%高楼层%'
+    if (floorTypes.length > 0 && floorTypes.length < 3) {
+      const clauses = floorTypes.map(() => "floor_info LIKE ?").join(' OR ');
+      conditions.push(`(${clauses})`);
+      for (const ft of floorTypes) params.push(`%${ft}%`);
     }
 
     if (!isNaN(areaMin)) {

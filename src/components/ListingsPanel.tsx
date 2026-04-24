@@ -746,6 +746,7 @@ interface ListingsPromptOptions {
   excludeLowFloor: boolean;
   excludeTwoFloor: boolean;
   excludeOneFloor: boolean;
+  floorTypes: string[];
   sortKey: string;
 }
 
@@ -759,7 +760,7 @@ function buildListingsPrompt(
   if (rows.length === 0) return '';
 
   const { community, crawlDate, houseType, areaEnabled, areaMin, areaMax,
-    excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor } = opts;
+    excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes } = opts;
 
   // ── 基础统计 ──
   const unitPrices  = rows.map(r => r.unit_price  != null ? Number(r.unit_price)  * 10000 : null).filter((v): v is number => v != null);
@@ -868,6 +869,7 @@ function buildListingsPrompt(
   if (excludeLowFloor) filterNotes.push('排除共3层楼');
   if (excludeTwoFloor) filterNotes.push('排除共2层楼');
   if (excludeOneFloor) filterNotes.push('排除共1层楼');
+  if (floorTypes.length > 0 && floorTypes.length < 3) filterNotes.push(`楼层筛选：${floorTypes.join('/')}`);
   const filterNote = filterNotes.length ? filterNotes.join('、') : '无';
 
   return `你是一位专业的房产分析师，请根据以下真实的挂牌房源数据，对"${community}"小区的在售房源进行全面分析，帮助潜在买家做出合理决策。
@@ -1168,6 +1170,7 @@ export default function ListingsPanel() {
   const [excludeLowFloor, setExcludeLowFloor]   = useState(true);
   const [excludeTwoFloor, setExcludeTwoFloor]   = useState(false);
   const [excludeOneFloor, setExcludeOneFloor]   = useState(false);
+  const [floorTypes, setFloorTypes]             = useState<string[]>([]);
   const [sortKey, setSortKey]               = useState('unit_price|asc');
   const [limit, setLimit]                   = useState(500);
 
@@ -1281,6 +1284,7 @@ export default function ListingsPanel() {
         order,
         limit: String(limit),
       });
+      if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
       if (houseType) params.set('houseType', houseType);
       if (areaEnabled) {
         const mn = parseFloat(areaMin);
@@ -1331,7 +1335,7 @@ export default function ListingsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, sortKey, limit, areaEnabled, areaMin, areaMax]);
+  }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, sortKey, limit, areaEnabled, areaMin, areaMax]);
 
   // 收藏
   const handleFavorite = useCallback(async (row: ListingRow) => {
@@ -1429,7 +1433,7 @@ export default function ListingsPanel() {
           prompt={buildListingsPrompt(
             rows,
             { community, crawlDate, houseType, areaEnabled, areaMin, areaMax,
-              excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, sortKey },
+              excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, sortKey },
             fmtUnit, fmtPrice, fmtArea
           )}
           onClose={() => setShowPrompt(false)}
@@ -1560,6 +1564,24 @@ export default function ListingsPanel() {
                 />
               </div>
             )}
+          </div>
+
+          {/* 楼层类型筛选 */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-gray-600">楼层筛选</label>
+            {(['低楼层', '中楼层', '高楼层'] as const).map(ft => (
+              <label key={ft} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={floorTypes.includes(ft)}
+                  onChange={e => setFloorTypes(prev =>
+                    e.target.checked ? [...prev, ft] : prev.filter(v => v !== ft)
+                  )}
+                  className="text-blue-500"
+                />
+                <span className="text-sm text-gray-700">{ft}</span>
+              </label>
+            ))}
           </div>
 
           {/* 过滤选项 */}

@@ -560,6 +560,7 @@ interface PromptFilters {
   excludeLowFloor: boolean;
   excludeTwoFloor: boolean;
   excludeOneFloor: boolean;
+  floorTypes: string[];
 }
 
 /**
@@ -572,7 +573,7 @@ function buildAnalysisPrompt(
   fmtUnitPrice: (v: number | null) => string,
   fmtPrice: (v: number | null) => string,
 ): string {
-  const { houseType, areaEnabled, areaMin, areaMax, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor } = filters;
+  const { houseType, areaEnabled, areaMin, areaMax, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes } = filters;
   if (rows.length === 0) return '';
 
   // rows 是降序（最新在前），取最新和最早
@@ -632,11 +633,12 @@ function buildAnalysisPrompt(
 
   // 过滤条件描述
   const filterNotes: string[] = [];
-  if (excludeBasement) filterNotes.push('已排除地下室');
-  if (excludeLowFloor) filterNotes.push('已排除共3层楼');
-  if (excludeTwoFloor) filterNotes.push('已排除共2层楼');
-  if (excludeOneFloor) filterNotes.push('已排除共1层楼');
-  const filterNote = filterNotes.length > 0 ? filterNotes.join('、') : '无特殊过滤';
+if (excludeBasement) filterNotes.push('已排除地下室');
+if (excludeLowFloor) filterNotes.push('已排除共3层楼');
+if (excludeTwoFloor) filterNotes.push('已排除共2层楼');
+if (excludeOneFloor) filterNotes.push('已排除共1层楼');
+if (floorTypes.length > 0 && floorTypes.length < 3) filterNotes.push(`楼层筛选：${floorTypes.join('/')}`);
+const filterNote = filterNotes.length > 0 ? filterNotes.join('、') : '无特殊过滤';
 
   return `你是一位专业的房产分析师，请根据以下真实的房产挂牌数据，对"${community}"小区${typeNote}的价格走势进行深度分析，并给出未来价格预测。
 
@@ -695,10 +697,12 @@ ${allDataTable}
 export default function StatsPanel() {
   const [community, setCommunity] = useState('');
   const [houseType, setHouseType] = useState('');
-  const [excludeBasement, setExcludeBasement] = useState(true);
-  const [excludeLowFloor, setExcludeLowFloor] = useState(true);
-  const [excludeTwoFloor, setExcludeTwoFloor] = useState(false);
-  const [excludeOneFloor, setExcludeOneFloor] = useState(false);
+const [excludeBasement, setExcludeBasement] = useState(true);
+const [excludeLowFloor, setExcludeLowFloor] = useState(true);
+const [excludeTwoFloor, setExcludeTwoFloor] = useState(false);
+const [excludeOneFloor, setExcludeOneFloor] = useState(false);
+// 楼层类型筛选：空=全部，否则只显示选中的楼层
+const [floorTypes, setFloorTypes] = useState<string[]>([]);
   const [limit, setLimit] = useState(100);
 
   // 面积区间（可选）
@@ -765,14 +769,15 @@ export default function StatsPanel() {
     setQueried(true);
 
     try {
-      const params = new URLSearchParams({
-        community: community.trim(),
-        excludeBasement: String(excludeBasement),
-        excludeLowFloor: String(excludeLowFloor),
-        excludeTwoFloor: String(excludeTwoFloor),
-        excludeOneFloor: String(excludeOneFloor),
-        limit: String(limit),
-      });
+const params = new URLSearchParams({
+  community: community.trim(),
+  excludeBasement: String(excludeBasement),
+  excludeLowFloor: String(excludeLowFloor),
+  excludeTwoFloor: String(excludeTwoFloor),
+  excludeOneFloor: String(excludeOneFloor),
+  limit: String(limit),
+});
+if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
       if (houseType) params.set('houseType', houseType);
       if (areaEnabled) {
         const mn = parseFloat(areaMin);
@@ -795,7 +800,7 @@ export default function StatsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, limit, areaEnabled, areaMin, areaMax]);
+  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, limit, areaEnabled, areaMin, areaMax]);
 
   // 万/平 → 元/平 显示
   const fmtUnitPrice = (v: number | null) => {
@@ -833,7 +838,7 @@ export default function StatsPanel() {
       {/* Prompt 弹窗 */}
       {showPrompt && rows.length > 0 && (
         <PromptModal
-          prompt={buildAnalysisPrompt(community, { houseType, areaEnabled, areaMin, areaMax, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor }, rows, fmtUnitPrice, fmtPrice)}
+          prompt={buildAnalysisPrompt(community, { houseType, areaEnabled, areaMin, areaMax, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes }, rows, fmtUnitPrice, fmtPrice)}
           onClose={() => setShowPrompt(false)}
         />
       )}
@@ -937,6 +942,24 @@ export default function StatsPanel() {
                 />
               </div>
             )}
+          </div>
+
+          {/* 楼层类型筛选 */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-gray-600">楼层筛选</label>
+            {(['低楼层', '中楼层', '高楼层'] as const).map(ft => (
+              <label key={ft} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={floorTypes.includes(ft)}
+                  onChange={e => setFloorTypes(prev =>
+                    e.target.checked ? [...prev, ft] : prev.filter(v => v !== ft)
+                  )}
+                  className="text-blue-500"
+                />
+                <span className="text-sm text-gray-700">{ft}</span>
+              </label>
+            ))}
           </div>
 
           {/* 过滤选项 */}
