@@ -9,6 +9,7 @@ import ListingsPanel from '@/components/ListingsPanel';
 import FavoritesPanel from '@/components/FavoritesPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 import CleanerPanel from '@/components/CleanerPanel';
+import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 
 type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'favorites' | 'cleaner' | 'settings';
 
@@ -16,6 +17,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
   // macOS 下标题栏需要为交通灯按钮留出左侧空间，Windows/Linux 不需要
   const [isMac, setIsMac] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     // 通过 preload 暴露的 platform 判断是否是 macOS
@@ -33,27 +35,66 @@ export default function Home() {
     { id: 'settings',  label: '系统设置', icon: '⚙️' },
   ];
 
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* 标题栏（drag-region 使 Electron 窗口可拖动；macOS 需 pl-20 为交通灯按钮留空间，Windows/Linux 保持 px-6） */}
-      <header className={`drag-region bg-white border-b border-gray-200 py-3 flex items-center gap-3 shadow-sm select-none ${isMac ? 'pl-20 pr-6' : 'px-6'}`}>
+    <div className="flex flex-col h-screen" style={{ background: 'var(--bg-app)' }}>
+      {/* 标题栏 */}
+      <header
+        className={`drag-region border-b py-3 flex items-center gap-3 shadow-sm select-none ${isMac ? 'pl-20 pr-4' : 'px-4'}`}
+        style={{ background: 'var(--header-bg)', borderColor: 'var(--border)' }}
+      >
         <span className="no-drag text-2xl">🏡</span>
-        <h1 className="no-drag text-lg font-bold text-gray-800">贝壳找房爬虫</h1>
-        <span className="no-drag text-xs text-gray-400 ml-auto">TypeScript + Playwright + Electron</span>
+        <h1 className="no-drag text-lg font-bold" style={{ color: 'var(--text-primary)' }}>贝壳找房爬虫</h1>
+
+        {/* 右侧：版本信息 + 主题切换 */}
+        <div className="no-drag ml-auto flex items-center gap-3">
+          <span className="text-xs" style={{ color: 'var(--text-hint)' }}>
+            TypeScript + Playwright + Electron
+          </span>
+
+          {/* 主题切换按钮组 */}
+          <div
+            className="flex items-center rounded-lg p-0.5 gap-0.5"
+            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}
+          >
+            {THEME_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setTheme(opt.value)}
+                title={opt.desc}
+                className={`no-drag flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                  theme === opt.value ? 'shadow-sm' : 'opacity-60 hover:opacity-90'
+                }`}
+                style={
+                  theme === opt.value
+                    ? { background: 'var(--bg-primary)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
+                    : { color: 'var(--text-muted)' }
+                }
+              >
+                <span>{opt.icon}</span>
+                <span>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </header>
 
       {/* 导航标签 */}
-      <nav className="bg-white border-b border-gray-200 px-6">
+      <nav
+        className="border-b px-4"
+        style={{ background: 'var(--nav-bg)', borderColor: 'var(--border)' }}
+      >
         <div className="flex gap-1">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className="px-4 py-3 text-sm font-medium border-b-2 transition-colors"
+              style={
                 activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                  ? { borderBottomColor: '#3b82f6', color: '#3b82f6' }
+                  : { borderBottomColor: 'transparent', color: 'var(--text-muted)' }
+              }
             >
               <span className="mr-1.5">{tab.icon}</span>
               {tab.label}
