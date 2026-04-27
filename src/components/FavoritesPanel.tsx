@@ -972,6 +972,7 @@ export default function FavoritesPanel() {
                       总价<br /><span className="font-normal text-gray-400">(万)</span>
                     </th>
                     <th className="px-4 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">收藏时间</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-600" style={{ minWidth: 200 }}>备注</th>
                     <th className="px-3 py-3 text-center font-semibold text-gray-600 whitespace-nowrap">操作</th>
                   </tr>
                 </thead>
@@ -1015,6 +1016,16 @@ export default function FavoritesPanel() {
                       </td>
                       {/* 收藏时间 */}
                       <td className="px-4 py-2.5 text-center text-gray-400 whitespace-nowrap">{row.created_at}</td>
+                      {/* 备注列 */}
+                      <td className="px-4 py-2.5 text-gray-600 align-top" style={{ minWidth: 200 }}>
+                        {row.detail_url && noteMap[row.detail_url] ? (
+                          <pre className="text-xs text-gray-600 whitespace-pre-wrap break-words font-sans leading-relaxed m-0">
+                            {noteMap[row.detail_url]}
+                          </pre>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
                       {/* 操作列 */}
                       <td className="px-3 py-2.5 text-center whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
