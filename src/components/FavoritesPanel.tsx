@@ -426,7 +426,7 @@ export default function FavoritesPanel() {
   // 备注 map：detail_url -> note（从 house_note 表关联读取）
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
 
-  // PDF 导出状态
+  // Excel 导出状态
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [includeNote, setIncludeNote] = useState(false);
@@ -587,8 +587,8 @@ export default function FavoritesPanel() {
   const fmtPrice = (v: number | null) => v == null ? '-' : Number(v).toFixed(2);
   const fmtArea  = (v: number | null) => v == null ? '-' : Number(v).toFixed(1);
 
-  // ===== 导出 PDF =====
-  const handleExportPdf = useCallback(async () => {
+  // ===== 导出 Excel =====
+  const handleExportExcel = useCallback(async () => {
     if (rows.length === 0) {
       alert('当前没有可导出的房源数据');
       return;
@@ -596,23 +596,16 @@ export default function FavoritesPanel() {
     setExporting(true);
     setExportError('');
     try {
-      // 构建过滤描述
-      const descParts: string[] = [];
-      if (filterCommunity) descParts.push(`小区：${filterCommunity}`);
-      if (houseType) descParts.push(`户型：${houseType}`);
-      if (areaEnabled) {
-        if (areaMin && areaMax) descParts.push(`面积：${areaMin}~${areaMax}㎡`);
-        else if (areaMin) descParts.push(`面积≥${areaMin}㎡`);
-        else if (areaMax) descParts.push(`面积≤${areaMax}㎡`);
-      }
-      const filterDesc = descParts.length > 0
-        ? `筛选条件：${descParts.join('  ·  ')}`
-        : `共 ${rows.length} 套收藏房源`;
+      // 将前端已加载的「房源备注」（来自 house_note 表）注入到 note 字段
+      const rowsWithNote = rows.map(r => ({
+        ...r,
+        note: (r.detail_url ? noteMap[r.detail_url] : undefined) ?? r.note ?? '',
+      }));
 
-      const res = await fetch('/api/favorite/export-pdf', {
+      const res = await fetch('/api/favorite/export-excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows, filterDesc, includeNote }),
+        body: JSON.stringify({ rows: rowsWithNote, includeNote }),
       });
 
       if (!res.ok) {
@@ -629,7 +622,7 @@ export default function FavoritesPanel() {
         .replace(/[: ]/g, '-')
         .slice(0, 16);
       a.href     = url;
-      a.download = `收藏房源_${dateStr}.pdf`;
+      a.download = `收藏房源_${dateStr}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -640,7 +633,7 @@ export default function FavoritesPanel() {
       setExporting(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, filterCommunity, houseType, areaEnabled, areaMin, areaMax, includeNote]);
+  }, [rows, includeNote, noteMap]);
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -863,26 +856,26 @@ export default function FavoritesPanel() {
             🔄
           </button>
 
-          {/* PDF 导出选项：备注 */}
+          {/* Excel 导出选项：备注 */}
           <div className="flex flex-col justify-end gap-1">
-            <label className="text-xs font-medium text-gray-600">PDF 选项</label>
+            <label className="text-xs font-medium text-gray-600">导出选项</label>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={includeNote}
                 onChange={e => setIncludeNote(e.target.checked)}
-                className="text-red-500"
+                className="text-green-500"
               />
-              <span className="text-sm text-gray-700">导出备注</span>
+              <span className="text-sm text-gray-700">包含备注列</span>
             </label>
           </div>
 
-          {/* 导出 PDF */}
+          {/* 导出 Excel */}
           <button
-            onClick={handleExportPdf}
+            onClick={handleExportExcel}
             disabled={exporting || loading || rows.length === 0}
-            className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            title="将当前筛选结果导出为 PDF 文档"
+            className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            title="将当前筛选结果导出为 Excel 表格"
           >
             {exporting ? (
               <>
@@ -890,9 +883,9 @@ export default function FavoritesPanel() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                生成中...
+                导出中...
               </>
-            ) : '📄 导出 PDF'}
+            ) : '📊 导出 Excel'}
           </button>
         </div>
 

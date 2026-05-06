@@ -1,6 +1,12 @@
 /**
  * 收藏房源 PDF 模板
  * 使用 @react-pdf/renderer 渲染
+ *
+ * 布局：每条房源占一行，横向分为 4 列
+ *   ① 标题区（小区、标题、位置、链接、价格）
+ *   ② 缩略图
+ *   ③ 基本信息（户型、面积、楼层、朝向、楼龄）
+ *   ④ 备注
  */
 
 import React from 'react';
@@ -21,65 +27,39 @@ import {
 const Text = _Text as any;
 
 // 使用本地字体文件（放在 public/fonts/ 目录下）
-// process.cwd() 在 Next.js 中指向项目根目录
 const FONTS_DIR = path.join(process.cwd(), 'public', 'fonts');
 
 Font.register({
   family: 'NotoSansSC',
   fonts: [
-    {
-      src: path.join(FONTS_DIR, 'NotoSansSC-Regular.ttf'),
-      fontWeight: 'normal',
-    },
-    {
-      src: path.join(FONTS_DIR, 'NotoSansSC-Bold.otf'),
-      fontWeight: 'bold',
-    },
+    { src: path.join(FONTS_DIR, 'NotoSansSC-Regular.ttf'), fontWeight: 'normal' },
+    { src: path.join(FONTS_DIR, 'NotoSansSC-Bold.otf'),    fontWeight: 'bold'   },
   ],
 });
 
-// ===== 列宽常量（A4 横向可用宽度 ≈ 785pt）=====
-// 固定列合计：20+70+50+62+88+38+30+52+34+28+44+38+50 = 604
-// 备注 flex:1 自动填满剩余 ~181pt
-const COL = {
-  index:       20,
-  image:       70,
-  location:    50,
-  community:   62,
-  title:       88,
-  type:        38,
-  area:        30,
-  floor:       52,
-  orientation: 34,
-  year:        28,
-  unitPrice:   44,
-  totalPrice:  38,
-  link:        50,
-  // note: flex: 1
-} as const;
+// ===== 4 列宽度（A4 横向可用宽度 ≈ 785pt）=====
+// 标题区 240  缩略图 130  基本信息 220  备注 flex:1（≈195）
+const COL_TITLE = 240;
+const COL_IMAGE = 130;
+const COL_INFO  = 220;
+// 备注列 flex:1
 
-// 单元格基础样式（overflow: hidden 防止文字溢出串列）
-const CELL_BASE = {
-  overflow: 'hidden' as const,
-  paddingHorizontal: 3,
-  paddingVertical: 4,
-};
-
-// ===== 样式定义 =====
+// ===== 样式 =====
 const styles = StyleSheet.create({
   page: {
     fontFamily: 'NotoSansSC',
-    fontSize: 8,
-    paddingTop: 26,
-    paddingBottom: 38,
+    fontSize: 9,
+    paddingTop: 28,
+    paddingBottom: 40,
     paddingHorizontal: 28,
     backgroundColor: '#ffffff',
     color: '#1f2937',
   },
-  // 页眉
+
+  // ── 页眉 ──
   header: {
-    marginBottom: 12,
-    paddingBottom: 8,
+    marginBottom: 14,
+    paddingBottom: 10,
     borderBottomWidth: 2,
     borderBottomColor: '#f59e0b',
     flexDirection: 'row',
@@ -87,143 +67,212 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#1f2937',
   },
   headerSubtitle: {
-    fontSize: 8,
+    fontSize: 9,
     color: '#6b7280',
-    marginTop: 2,
+    marginTop: 3,
   },
-  headerMeta: {
-    textAlign: 'right',
-  },
+  headerMeta: { textAlign: 'right' },
   headerMetaText: {
-    fontSize: 7,
+    fontSize: 8,
     color: '#9ca3af',
   },
-  // 表格外框
+
+  // ── 表格外框 ──
   table: {
     width: '100%',
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
   },
-  // 表头行
+
+  // ── 表头行 ──
   tableHeader: {
     flexDirection: 'row',
     backgroundColor: '#fef9c3',
     borderBottomWidth: 1,
     borderBottomColor: '#d1d5db',
   },
-  // 数据行（含图片，minHeight 与图片高度匹配）
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-    minHeight: 48,
+  thCell: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    justifyContent: 'center',
   },
-  tableRowEven: { backgroundColor: '#fffbeb' },
-  tableRowOdd:  { backgroundColor: '#ffffff' },
-
-  // ===== 列容器 =====
-  colIndex:       { ...CELL_BASE, width: COL.index,       justifyContent: 'center', alignItems: 'flex-end' },
-  colImage:       { width: COL.image, paddingHorizontal: 3, paddingVertical: 3, overflow: 'hidden' },
-  colLocation:    { ...CELL_BASE, width: COL.location,    justifyContent: 'center' },
-  colCommunity:   { ...CELL_BASE, width: COL.community,   justifyContent: 'center' },
-  colTitle:       { ...CELL_BASE, width: COL.title,       justifyContent: 'center' },
-  colType:        { ...CELL_BASE, width: COL.type,        justifyContent: 'center', alignItems: 'center' },
-  colArea:        { ...CELL_BASE, width: COL.area,        justifyContent: 'center', alignItems: 'flex-end' },
-  colFloor:       { ...CELL_BASE, width: COL.floor,       justifyContent: 'center', alignItems: 'center' },
-  colOrientation: { ...CELL_BASE, width: COL.orientation, justifyContent: 'center', alignItems: 'center' },
-  colYear:        { ...CELL_BASE, width: COL.year,        justifyContent: 'center', alignItems: 'center' },
-  colUnitPrice:   { ...CELL_BASE, width: COL.unitPrice,   justifyContent: 'center', alignItems: 'flex-end' },
-  colTotalPrice:  { ...CELL_BASE, width: COL.totalPrice,  justifyContent: 'center', alignItems: 'flex-end' },
-  colLink:        { ...CELL_BASE, width: COL.link,        justifyContent: 'center' },
-  colNote:        { ...CELL_BASE, flex: 1,                justifyContent: 'center' },
-
-  // ===== 表头文字 =====
   thText: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 'bold',
     color: '#78350f',
   },
 
-  // ===== 数据单元格文字（统一 fontSize=7，单行截断）=====
-  tdBase: {
-    fontSize: 7,
-    color: '#374151',
+  // ── 数据行 ──
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    minHeight: 80,
   },
-  tdMuted: {
+  tableRowEven: { backgroundColor: '#fffbeb' },
+  tableRowOdd:  { backgroundColor: '#ffffff' },
+
+  // ── 列 1：标题区 ──
+  colTitle: {
+    width: COL_TITLE,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderRightWidth: 1,
+    borderRightColor: '#f3f4f6',
+  },
+  // 序号徽章
+  idxBadge: {
     fontSize: 7,
     color: '#9ca3af',
+    marginBottom: 3,
   },
-  tdBold: {
-    fontSize: 7,
+  // 标题主文字
+  titleMain: {
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#1f2937',
+    lineHeight: 1.4,
+    marginBottom: 3,
   },
-  tdPriceUnit: {
-    fontSize: 7,
+  // 小区名
+  communityText: {
+    fontSize: 8,
+    color: '#b45309',
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  // 位置
+  locationText: {
+    fontSize: 7.5,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  // 价格行
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginTop: 2,
+  },
+  priceUnit: {
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#c2410c',
   },
-  tdPriceTotal: {
-    fontSize: 7,
+  priceTotal: {
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#1d4ed8',
   },
-  tdLink: {
-    fontSize: 7,
+  linkText: {
+    fontSize: 7.5,
     color: '#2563eb',
     textDecoration: 'underline',
+    marginTop: 4,
   },
 
-  // ===== 图片 =====
+  // ── 列 2：缩略图 ──
+  colImage: {
+    width: COL_IMAGE,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderRightWidth: 1,
+    borderRightColor: '#f3f4f6',
+  },
   imgThumb: {
-    width: 64,
-    height: 42,
+    width: 110,
+    height: 74,
     objectFit: 'cover',
-    borderRadius: 2,
+    borderRadius: 3,
   },
   imgPlaceholder: {
-    width: 64,
-    height: 42,
+    width: 110,
+    height: 74,
     backgroundColor: '#f3f4f6',
-    borderRadius: 2,
+    borderRadius: 3,
     alignItems: 'center',
     justifyContent: 'center',
   },
   imgPlaceholderText: {
-    fontSize: 6,
+    fontSize: 7,
     color: '#d1d5db',
   },
 
-  // ===== 备注（允许 2 行）=====
-  noteText: {
-    fontSize: 6.5,
-    color: '#6b7280',
+  // ── 列 3：基本信息 ──
+  colInfo: {
+    width: COL_INFO,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderRightWidth: 1,
+    borderRightColor: '#f3f4f6',
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  infoItem: {
+    width: '50%',
+    flexDirection: 'row',
+    marginBottom: 5,
+    alignItems: 'flex-start',
+  },
+  infoLabel: {
+    fontSize: 7.5,
+    color: '#9ca3af',
+    width: 30,
+    flexShrink: 0,
+  },
+  infoValue: {
+    fontSize: 8,
+    color: '#374151',
     lineHeight: 1.4,
+    flex: 1,
   },
 
-  // ===== 分组标题 =====
+  // ── 列 4：备注 ──
+  colNote: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'flex-start',
+    overflow: 'hidden',
+  },
+  noteText: {
+    fontSize: 8,
+    color: '#6b7280',
+    lineHeight: 1.6,
+  },
+
+  // ── 分组标题 ──
   groupHeader: {
     flexDirection: 'row',
     backgroundColor: '#fff7ed',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: '#fed7aa',
   },
   groupHeaderText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#9a3412',
   },
 
-  // ===== 页脚 =====
+  // ── 页脚 ──
   footer: {
     position: 'absolute',
     bottom: 14,
@@ -236,7 +285,7 @@ const styles = StyleSheet.create({
     paddingTop: 5,
   },
   footerText: {
-    fontSize: 6.5,
+    fontSize: 7,
     color: '#d1d5db',
   },
 });
@@ -276,13 +325,13 @@ interface PdfTemplateProps {
 
 // ===== 格式化工具 =====
 const fmtUnit = (v: number | null): string =>
-  v == null ? '-' : `${(Number(v) * 10000).toFixed(0)}`;
+  v == null ? '-' : `${(Number(v) * 10000).toFixed(0)} 元/㎡`;
 
 const fmtPrice = (v: number | null): string =>
-  v == null ? '-' : `${Number(v).toFixed(2)}万`;
+  v == null ? '-' : `${Number(v).toFixed(2)} 万`;
 
 const fmtArea = (v: number | null): string =>
-  v == null ? '-' : `${Number(v).toFixed(1)}`;
+  v == null ? '-' : `${Number(v).toFixed(1)} ㎡`;
 
 // ===== 按小区分组 =====
 function groupByCommunity(rows: FavoriteRow[]): Map<string, FavoriteRow[]> {
@@ -295,11 +344,20 @@ function groupByCommunity(rows: FavoriteRow[]): Map<string, FavoriteRow[]> {
   return map;
 }
 
+// ===== 基本信息条目组件 =====
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoItem}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue} numberOfLines={2}>{value}</Text>
+    </View>
+  );
+}
+
 // ===== PDF 文档组件 =====
 export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNote = false }: PdfTemplateProps) {
   const grouped = groupByCommunity(rows);
 
-  // 扁平化行列表（含分组标题）
   interface GroupHeaderItem { type: 'group'; community: string; count: number }
   interface RowItem { type: 'row'; row: FavoriteRow; idx: number }
   type Item = GroupHeaderItem | RowItem;
@@ -322,13 +380,12 @@ export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNot
       creator="bk_spider_ts"
     >
       <Page size="A4" orientation="landscape" style={styles.page}>
+
         {/* ===== 页眉 ===== */}
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>⭐ 收藏房源报告</Text>
-            {filterDesc && (
-              <Text style={styles.headerSubtitle}>{filterDesc}</Text>
-            )}
+            {filterDesc && <Text style={styles.headerSubtitle}>{filterDesc}</Text>}
           </View>
           <View style={styles.headerMeta}>
             <Text style={styles.headerMetaText}>生成时间：{generatedAt}</Text>
@@ -336,25 +393,24 @@ export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNot
           </View>
         </View>
 
-        {/* ===== 房源列表表格 ===== */}
+        {/* ===== 表格 ===== */}
         <View style={styles.table}>
+
           {/* 表头 */}
           <View style={styles.tableHeader}>
-            <View style={styles.colIndex}>    <Text style={styles.thText}>#</Text></View>
-            <View style={styles.colImage}>    <Text style={styles.thText}>缩略图</Text></View>
-            <View style={styles.colLocation}> <Text style={styles.thText}>省/市/区</Text></View>
-            <View style={styles.colCommunity}><Text style={styles.thText}>小区</Text></View>
-            <View style={styles.colTitle}>    <Text style={styles.thText}>标题</Text></View>
-            <View style={styles.colType}>     <Text style={styles.thText}>户型</Text></View>
-            <View style={styles.colArea}>     <Text style={styles.thText}>面积</Text></View>
-            <View style={styles.colFloor}>    <Text style={styles.thText}>楼层</Text></View>
-            <View style={styles.colOrientation}><Text style={styles.thText}>朝向</Text></View>
-            <View style={styles.colYear}>     <Text style={styles.thText}>年份</Text></View>
-            <View style={styles.colUnitPrice}><Text style={styles.thText}>单价(元)</Text></View>
-            <View style={styles.colTotalPrice}><Text style={styles.thText}>总价</Text></View>
-            <View style={styles.colLink}>     <Text style={styles.thText}>链接</Text></View>
+            <View style={[styles.thCell, { width: COL_TITLE }]}>
+              <Text style={styles.thText}>标题</Text>
+            </View>
+            <View style={[styles.thCell, { width: COL_IMAGE }]}>
+              <Text style={styles.thText}>缩略图</Text>
+            </View>
+            <View style={[styles.thCell, { width: COL_INFO }]}>
+              <Text style={styles.thText}>基本信息</Text>
+            </View>
             {includeNote && (
-              <View style={styles.colNote}><Text style={styles.thText}>备注</Text></View>
+              <View style={[styles.thCell, { flex: 1 }]}>
+                <Text style={styles.thText}>备注</Text>
+              </View>
             )}
           </View>
 
@@ -372,22 +428,35 @@ export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNot
 
             const { row, idx } = item;
             const isEven = idx % 2 === 0;
-            const location = [row.city, row.district].filter(Boolean).join('/');
+            const location = [row.city, row.district].filter(Boolean).join(' / ');
 
             return (
               <View
                 key={row.id}
-                style={[
-                  styles.tableRow,
-                  isEven ? styles.tableRowEven : styles.tableRowOdd,
-                ]}
+                style={[styles.tableRow, isEven ? styles.tableRowEven : styles.tableRowOdd]}
               >
-                {/* 序号 */}
-                <View style={styles.colIndex}>
-                  <Text style={styles.tdMuted}>{idx}</Text>
+                {/* ── 列1：标题区 ── */}
+                <View style={styles.colTitle}>
+                  <Text style={styles.idxBadge}>#{idx}</Text>
+                  <Text style={styles.communityText} numberOfLines={1}>
+                    {row.community || '-'}
+                  </Text>
+                  <Text style={styles.titleMain} numberOfLines={3}>
+                    {row.title || '-'}
+                  </Text>
+                  <Text style={styles.locationText} numberOfLines={1}>
+                    {location || '-'}
+                  </Text>
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceUnit}>{fmtUnit(row.unit_price)}</Text>
+                    <Text style={styles.priceTotal}>{fmtPrice(row.total_price)}</Text>
+                  </View>
+                  {row.detail_url && (
+                    <Link src={row.detail_url} style={styles.linkText}>查看详情 →</Link>
+                  )}
                 </View>
 
-                {/* 缩略图 */}
+                {/* ── 列2：缩略图 ── */}
                 <View style={styles.colImage}>
                   {row.image_data ? (
                     <Image src={row.image_data} style={styles.imgThumb} />
@@ -398,69 +467,23 @@ export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNot
                   )}
                 </View>
 
-                {/* 省/市/区（只显示市+区，省略省节省宽度） */}
-                <View style={styles.colLocation}>
-                  <Text style={styles.tdMuted} numberOfLines={2}>{location || '-'}</Text>
+                {/* ── 列3：基本信息 ── */}
+                <View style={styles.colInfo}>
+                  <View style={styles.infoGrid}>
+                    <InfoItem label="户型" value={row.house_type || '-'} />
+                    <InfoItem label="面积" value={fmtArea(row.area)} />
+                    <InfoItem label="楼层" value={row.floor_info || '-'} />
+                    <InfoItem label="朝向" value={row.orientation || '-'} />
+                    <InfoItem label="楼龄" value={row.build_year != null ? `${row.build_year} 年` : '-'} />
+                  </View>
                 </View>
 
-                {/* 小区 */}
-                <View style={styles.colCommunity}>
-                  <Text style={styles.tdBold} numberOfLines={2}>{row.community || '-'}</Text>
-                </View>
-
-                {/* 标题 */}
-                <View style={styles.colTitle}>
-                  <Text style={styles.tdBase} numberOfLines={2}>{row.title || '-'}</Text>
-                </View>
-
-                {/* 户型 */}
-                <View style={styles.colType}>
-                  <Text style={styles.tdBase} numberOfLines={1}>{row.house_type || '-'}</Text>
-                </View>
-
-                {/* 面积 */}
-                <View style={styles.colArea}>
-                  <Text style={styles.tdBase} numberOfLines={1}>{fmtArea(row.area)}</Text>
-                </View>
-
-                {/* 楼层 */}
-                <View style={styles.colFloor}>
-                  <Text style={styles.tdBase} numberOfLines={2}>{row.floor_info || '-'}</Text>
-                </View>
-
-                {/* 朝向 */}
-                <View style={styles.colOrientation}>
-                  <Text style={styles.tdBase} numberOfLines={1}>{row.orientation || '-'}</Text>
-                </View>
-
-                {/* 年份 */}
-                <View style={styles.colYear}>
-                  <Text style={styles.tdBase} numberOfLines={1}>{row.build_year ?? '-'}</Text>
-                </View>
-
-                {/* 单价 */}
-                <View style={styles.colUnitPrice}>
-                  <Text style={styles.tdPriceUnit} numberOfLines={1}>{fmtUnit(row.unit_price)}</Text>
-                </View>
-
-                {/* 总价 */}
-                <View style={styles.colTotalPrice}>
-                  <Text style={styles.tdPriceTotal} numberOfLines={1}>{fmtPrice(row.total_price)}</Text>
-                </View>
-
-                {/* 链接 */}
-                <View style={styles.colLink}>
-                  {row.detail_url ? (
-                    <Link src={row.detail_url} style={styles.tdLink}>查看详情</Link>
-                  ) : (
-                    <Text style={styles.tdMuted}>-</Text>
-                  )}
-                </View>
-
-                {/* 备注（允许 3 行，超出截断） */}
+                {/* ── 列4：备注 ── */}
                 {includeNote && (
                   <View style={styles.colNote}>
-                    <Text style={styles.noteText} numberOfLines={3}>{row.note || ''}</Text>
+                    <Text style={styles.noteText} numberOfLines={5}>
+                      {row.note || ''}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -473,9 +496,12 @@ export function FavoritesPdfDocument({ rows, generatedAt, filterDesc, includeNot
           <Text style={styles.footerText}>贝壳找房爬虫 · 收藏房源导出报告</Text>
           <Text
             style={styles.footerText}
-            render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `第 ${pageNumber} / ${totalPages} 页`}
+            render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+              `第 ${pageNumber} / ${totalPages} 页`
+            }
           />
         </View>
+
       </Page>
     </Document>
   );

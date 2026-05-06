@@ -24,6 +24,7 @@
     "better-sqlite3": "^12.8.0",
     "electron-log": "^5.1.5",
     "electron-store": "^8.2.0",
+    "exceljs": "^4.4.0",
     "next": "^14.2.3",
     "playwright": "^1.44.0",
     "playwright-extra": "^4.3.6",
