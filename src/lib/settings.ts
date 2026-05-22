@@ -1,7 +1,7 @@
 /**
  * 全局配置管理
  * 对应原 Python 项目 config/settings.py
- * 在 Electron 环境下使用 electron-store，在纯 Next.js 环境下使用环境变量
+ * 使用环境变量或默认路径
  */
 
 import path from 'path';

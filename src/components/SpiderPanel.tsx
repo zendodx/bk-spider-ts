@@ -55,7 +55,6 @@ export default function SpiderPanel() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [progress, setProgress] = useState<ProgressInfo>({ page: 0, maxPage: 0, totalSaved: 0 });
   const [showCustomSpeed, setShowCustomSpeed] = useState(false);
-  const [isElectron, setIsElectron] = useState(false);
   // 小区搜索 combobox
   const [communityKeyword, setCommunityKeyword] = useState('');
   const [communityOptions, setCommunityOptions] = useState<string[]>([]);
@@ -64,11 +63,6 @@ export default function SpiderPanel() {
   const communityRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-
-  // 在客户端挂载后检测 Electron 环境（避免 SSR Hydration 错误）
-  useEffect(() => {
-    setIsElectron(typeof window !== 'undefined' && !!window.electronAPI);
-  }, []);
 
   // 防抖查询小区（从数据库）
   useEffect(() => {
@@ -510,26 +504,13 @@ export default function SpiderPanel() {
               </label>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">数据保存目录</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={params.dataDir}
-                    onChange={e => setParams(p => ({ ...p, dataDir: e.target.value }))}
-                    placeholder="默认：~/bk_spider_data/采集数据"
-                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  {isElectron && (
-                    <button
-                      onClick={async () => {
-                        const dir = await window.electronAPI!.openDirectory();
-                        if (dir) setParams(p => ({ ...p, dataDir: dir }));
-                      }}
-                      className="px-3 py-2 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors border border-gray-300"
-                    >
-                      浏览...
-                    </button>
-                  )}
-                </div>
+                <input
+                  type="text"
+                  value={params.dataDir}
+                  onChange={e => setParams(p => ({ ...p, dataDir: e.target.value }))}
+                  placeholder="默认：~/bk_spider_data/采集数据"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             </div>
           </section>

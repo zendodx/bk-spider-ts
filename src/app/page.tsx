@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import SpiderPanel from '@/components/SpiderPanel';
 import PredictPanel from '@/components/PredictPanel';
 import LoanPanel from '@/components/LoanPanel';
@@ -15,14 +15,7 @@ type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'favorites' | 
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
-  // macOS 下标题栏需要为交通灯按钮留出左侧空间，Windows/Linux 不需要
-  const [isMac, setIsMac] = useState(false);
   const { theme, setTheme } = useTheme();
-
-  useEffect(() => {
-    // 通过 preload 暴露的 platform 判断是否是 macOS
-    setIsMac(typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin');
-  }, []);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'spider',    label: '爬虫采集', icon: '🕷️' },
@@ -40,16 +33,16 @@ export default function Home() {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-app)' }}>
       {/* 标题栏 */}
       <header
-        className={`drag-region border-b py-3 flex items-center gap-3 shadow-sm select-none ${isMac ? 'pl-20 pr-4' : 'px-4'}`}
+        className="border-b px-4 py-3 flex items-center gap-3 shadow-sm select-none"
         style={{ background: 'var(--header-bg)', borderColor: 'var(--border)' }}
       >
-        <span className="no-drag text-2xl">🏡</span>
-        <h1 className="no-drag text-lg font-bold" style={{ color: 'var(--text-primary)' }}>贝壳找房爬虫</h1>
+        <span className="text-2xl">🏡</span>
+        <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>贝壳找房爬虫</h1>
 
         {/* 右侧：版本信息 + 主题切换 */}
-        <div className="no-drag ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-3">
           <span className="text-xs" style={{ color: 'var(--text-hint)' }}>
-            TypeScript + Playwright + Electron
+            TypeScript + Playwright + Next.js
           </span>
 
           {/* 主题切换按钮组 */}
@@ -62,7 +55,7 @@ export default function Home() {
                 key={opt.value}
                 onClick={() => setTheme(opt.value)}
                 title={opt.desc}
-                className={`no-drag flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
                   theme === opt.value ? 'shadow-sm' : 'opacity-60 hover:opacity-90'
                 }`}
                 style={
