@@ -1034,6 +1034,28 @@ if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
             ) : '🔍 查询统计'}
           </button>
 
+          {/* 重置筛选 */}
+          <button
+            onClick={() => {
+              setCommunityKeyword('');
+              setCommunity('');
+              setHouseType('');
+              setExcludeBasement(true);
+              setExcludeLowFloor(true);
+              setExcludeTwoFloor(false);
+              setExcludeOneFloor(false);
+              setFloorTypes([]);
+              setAreaEnabled(false);
+              setAreaMin('');
+              setAreaMax('');
+              setLimit(100);
+            }}
+            className="px-4 py-2 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+            title="重置所有筛选条件为默认值"
+          >
+            🔄 重置
+          </button>
+
           {/* 图表展示按钮（有数据才激活） */}
           <button
             onClick={() => setShowChart(true)}

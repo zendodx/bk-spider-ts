@@ -26,6 +26,12 @@ interface ListingRow {
   follow_count: number;
   publish_time: string | null;
   crawl_time: string;
+  /** 上一次采集日的单价（用于趋势对比） */
+  prev_unit_price: number | null;
+  /** 上一次采集日的总价（用于趋势对比） */
+  prev_total_price: number | null;
+  /** 上一次采集日期 */
+  prev_crawl_date: string | null;
 }
 
 const HOUSE_TYPE_OPTIONS = [
@@ -62,13 +68,46 @@ interface PriceHistoryRow {
   follow_count: number;
 }
 
-// ===== 趋势箭头组件 =====
-function TrendArrow({ curr, prev }: { curr: number | null; prev: number | null }) {
+// ===== 趋势信息组件（箭头 + 下方小字描述）=====
+function TrendArrow({
+  curr,
+  prev,
+  prevDate,
+  unit = '',
+  fmt,
+  inline = false,
+}: {
+  curr: number | null;
+  prev: number | null;
+  prevDate?: string | null;
+  unit?: string;
+  fmt?: (v: number) => string;
+  /** inline=true 时保留行内小箭头样式（用于弹窗等紧凑场景） */
+  inline?: boolean;
+}) {
   if (curr == null || prev == null) return null;
-  const diff = Number(curr) - Number(prev);
-  if (Math.abs(diff) < 0.0001) return <span className="text-gray-400 ml-1 text-xs">—</span>;
-  if (diff > 0) return <span className="text-red-500 ml-1 text-xs font-bold">↑</span>;
-  return <span className="text-green-600 ml-1 text-xs font-bold">↓</span>;
+  const diff = curr - prev;
+  if (Math.abs(diff) < 0.01) return null;
+  const diffStr = fmt
+    ? `${diff > 0 ? '+' : ''}${fmt(diff)}`
+    : `${diff > 0 ? '+' : ''}${Math.round(diff).toLocaleString()}`;
+  const isUp = diff > 0;
+  const color = isUp ? 'text-red-500' : 'text-green-600';
+  const arrow = isUp ? '↑' : '↓';
+  if (inline) {
+    const tipText = prevDate
+      ? `较 ${prevDate}：${diffStr} ${unit}`
+      : `变动：${diffStr} ${unit}`;
+    return (
+      <span className={`ml-1 text-xs font-bold cursor-default ${color}`} title={tipText}>{arrow}</span>
+    );
+  }
+  const dateLabel = prevDate ? `较${prevDate.slice(5)}` : '较上次';
+  return (
+    <span className={`block text-xs font-medium mt-0.5 ${color}`}>
+      {arrow} {dateLabel} {diffStr} {unit}
+    </span>
+  );
 }
 
 // ===== 价格历史弹窗组件 =====
@@ -234,12 +273,12 @@ function PriceHistoryModal({
                         {/* 单价 + 趋势 */}
                         <td className="px-3 py-2 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
                           {fmtUnit(row.unit_price)}
-                          <TrendArrow curr={row.unit_price} prev={nextRow?.unit_price ?? null} />
+                          <TrendArrow curr={row.unit_price} prev={nextRow?.unit_price ?? null} inline />
                         </td>
                         {/* 总价 + 趋势 */}
                         <td className="px-3 py-2 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
                           {fmtPrice(row.total_price)}
-                          <TrendArrow curr={row.total_price} prev={nextRow?.total_price ?? null} />
+                          <TrendArrow curr={row.total_price} prev={nextRow?.total_price ?? null} inline />
                         </td>
                         {/* 关注 */}
                         <td className="px-3 py-2 text-right text-gray-500">{row.follow_count ?? 0}</td>
@@ -1879,6 +1918,30 @@ const [showChart, setShowChart] = useState(false);
             ) : '🔍 查询房源'}
           </button>
 
+          {/* 重置筛选 */}
+          <button
+            onClick={() => {
+              setCommunityKeyword('');
+              setCommunity('');
+              setCrawlDate(today());
+              setHouseType('');
+              setSortKey('unit_price|asc');
+              setExcludeBasement(true);
+              setExcludeLowFloor(true);
+              setExcludeTwoFloor(false);
+              setExcludeOneFloor(false);
+              setFloorTypes([]);
+              setAreaEnabled(false);
+              setAreaMin('');
+              setAreaMax('');
+              setLimit(500);
+            }}
+            className="px-4 py-2 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+            title="重置所有筛选条件为默认值"
+          >
+            🔄 重置
+          </button>
+
           {/* 价格分布图表按钮 */}
           <button
             onClick={() => setShowChart(true)}
@@ -2013,13 +2076,30 @@ const [showChart, setShowChart] = useState(false);
                       <td className="px-4 py-2.5 text-center text-gray-600 whitespace-nowrap">{row.orientation || '—'}</td>
                       {/* 年份 */}
                       <td className="px-4 py-2.5 text-center text-gray-600 whitespace-nowrap">{row.build_year || '—'}</td>
-                      {/* 单价 */}
-                      <td className="px-4 py-2.5 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
-                        {fmtUnit(row.unit_price)}
+                      {/* 单价 + 趋势 */}
+                      <td className="px-4 py-2.5 text-right bg-orange-50/40">
+                        <span className="font-semibold text-orange-700 whitespace-nowrap">
+                          {fmtUnit(row.unit_price)}
+                        </span>
+                        <TrendArrow
+                          curr={row.unit_price != null ? Math.round(Number(row.unit_price) * 10000) : null}
+                          prev={row.prev_unit_price != null ? Math.round(Number(row.prev_unit_price) * 10000) : null}
+                          prevDate={row.prev_crawl_date}
+                          unit="元/平"
+                        />
                       </td>
-                      {/* 总价 */}
-                      <td className="px-4 py-2.5 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
-                        {fmtPrice(row.total_price)}
+                      {/* 总价 + 趋势 */}
+                      <td className="px-4 py-2.5 text-right bg-blue-50/40">
+                        <span className="font-semibold text-blue-700 whitespace-nowrap">
+                          {fmtPrice(row.total_price)}
+                        </span>
+                        <TrendArrow
+                          curr={row.total_price != null ? Number(row.total_price) * 10000 : null}
+                          prev={row.prev_total_price != null ? Number(row.prev_total_price) * 10000 : null}
+                          prevDate={row.prev_crawl_date}
+                          unit="万"
+                          fmt={(v) => (v / 10000).toFixed(2)}
+                        />
                       </td>
                       {/* 关注 */}
                       <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{row.follow_count ?? 0}</td>

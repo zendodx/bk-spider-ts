@@ -31,6 +31,12 @@ export interface ListingRow {
   follow_count: number;
   publish_time: string | null;
   crawl_time: string;
+  /** 上一次采集日期（不含当天）的单价，用于趋势对比，可能为 null */
+  prev_unit_price: number | null;
+  /** 上一次采集日期（不含当天）的总价，用于趋势对比，可能为 null */
+  prev_total_price: number | null;
+  /** 上一次采集日期 */
+  prev_crawl_date: string | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -115,7 +121,7 @@ export async function GET(request: NextRequest) {
     const where = conditions.join(' AND ');
 
     // 按 detail_url 去重，保留 created_at 最新的那一行
-    // SQLite 兼容写法：使用子查询 + INNER JOIN
+    // 通过相关标量子查询获取上一次采集日期的价格，用于趋势展示
     const sql = `
       SELECT
         t.id,
@@ -135,8 +141,35 @@ export async function GET(request: NextRequest) {
         t.tags,
         t.detail_url,
         t.follow_count,
-        strftime('%Y-%m-%d', t.publish_time)      AS publish_time,
-        strftime('%Y-%m-%d %H:%M', t.created_at)  AS crawl_time
+        strftime('%Y-%m-%d', t.publish_time)     AS publish_time,
+        strftime('%Y-%m-%d %H:%M', t.created_at) AS crawl_time,
+        (
+          SELECT h2.unit_price
+          FROM house_listings h2
+          WHERE h2.detail_url = t.detail_url
+            AND h2.is_deleted = 0
+            AND date(h2.created_at) < date(t.created_at)
+          ORDER BY h2.created_at DESC
+          LIMIT 1
+        ) AS prev_unit_price,
+        (
+          SELECT h3.total_price
+          FROM house_listings h3
+          WHERE h3.detail_url = t.detail_url
+            AND h3.is_deleted = 0
+            AND date(h3.created_at) < date(t.created_at)
+          ORDER BY h3.created_at DESC
+          LIMIT 1
+        ) AS prev_total_price,
+        (
+          SELECT strftime('%Y-%m-%d', h4.created_at)
+          FROM house_listings h4
+          WHERE h4.detail_url = t.detail_url
+            AND h4.is_deleted = 0
+            AND date(h4.created_at) < date(t.created_at)
+          ORDER BY h4.created_at DESC
+          LIMIT 1
+        ) AS prev_crawl_date
       FROM house_listings t
       INNER JOIN (
         SELECT detail_url, MAX(created_at) AS max_created
@@ -145,7 +178,7 @@ export async function GET(request: NextRequest) {
         GROUP BY detail_url
       ) dedup
         ON t.detail_url = dedup.detail_url
-       AND t.created_at  = dedup.max_created
+       AND t.created_at = dedup.max_created
       WHERE ${where}
       ORDER BY t.${orderBy} ${order}
       LIMIT ?
