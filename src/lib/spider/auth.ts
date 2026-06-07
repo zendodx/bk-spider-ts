@@ -4,10 +4,13 @@
  * Cookie 持久化改为存储在 SQLite（bk_cookie 表）中
  */
 
-import { BrowserContext, Page } from 'playwright';
+import { BrowserContext, Cookie, Page } from 'playwright';
 import { URLBuilder } from './url-builder';
 import { setWindowVisible } from './driver';
 import { getDb } from '../db/database';
+
+/** Playwright addCookies 接受的 sameSite 合法值 */
+type SameSiteValue = 'Strict' | 'Lax' | 'None';
 
 export class AuthManager {
   private host: string;
@@ -51,11 +54,13 @@ export class AuthManager {
       await this.waitForManualLogin(page, timeout);
       // 登录后页面可能还在跳转，等待彻底稳定再采集 Cookie
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-      await this.saveCookies(context);
+      await this.saveCookiesFromContext(context);
       await setWindowVisible(page, false);
       console.log('✓ 登录成功，Cookie 已保存至数据库');
     } else {
       console.log('✓ 已恢复登录态');
+      // Cookie 有效，顺手更新数据库中的 Cookie（可能服务端有变更）
+      await this.saveCookiesFromContext(context);
     }
   }
 
@@ -121,7 +126,12 @@ export class AuthManager {
 
   /**
    * 从 SQLite 加载 Cookie
-   * @returns 是否成功加载到 Cookie
+   *
+   * 修复：
+   * 1. 保留 sameSite 字段，并规范化为 Playwright 要求的 'Strict' | 'Lax' | 'None'
+   * 2. 过滤已过期的持久 Cookie（expires > 0 且已过期）
+   * 3. Session Cookie（expires = -1）保留，因为 context 还活着
+   * 4. sameSite=None 且 secure=false 的 Cookie，强制设 secure=true（浏览器要求）
    */
   private async loadCookies(context: BrowserContext): Promise<boolean> {
     try {
@@ -133,25 +143,71 @@ export class AuthManager {
       if (!row?.cookie) return false;
 
       const data = JSON.parse(row.cookie);
-      if (data.cookies && Array.isArray(data.cookies)) {
-        const cleaned = data.cookies.map((c: Record<string, unknown>) => {
-          const { sameSite: _sameSite, ...rest } = c;
-          return rest;
+      if (!data.cookies || !Array.isArray(data.cookies)) return false;
+
+      const now = Date.now() / 1000; // 当前 Unix 时间戳（秒）
+
+      const validCookies = data.cookies
+        .filter((c: Record<string, unknown>) => {
+          // 过滤已过期的持久 Cookie（expires > 0 表示持久 Cookie）
+          const expires = typeof c.expires === 'number' ? c.expires : -1;
+          if (expires > 0 && expires < now) {
+            console.log(`  跳过已过期 Cookie: ${c.name} (expires: ${new Date(expires * 1000).toISOString()})`);
+            return false;
+          }
+          return true;
+        })
+        .map((c: Record<string, unknown>) => {
+          const cookie: Record<string, unknown> = { ...c };
+
+          // 规范化 sameSite
+          const rawSameSite = String(cookie.sameSite || 'Lax');
+          const sameSite = this.normalizeSameSite(rawSameSite);
+          cookie.sameSite = sameSite;
+
+          // sameSite=None 时浏览器要求 secure=true
+          if (sameSite === 'None' && !cookie.secure) {
+            cookie.secure = true;
+          }
+
+          // Playwright 要求 expires 为数字
+          if (cookie.expires !== undefined && typeof cookie.expires !== 'number') {
+            cookie.expires = -1;
+          }
+
+          return cookie;
         });
-        await context.addCookies(cleaned);
-        return true;
+
+      if (validCookies.length === 0) {
+        console.log('  所有 Cookie 已过期，需要重新登录');
+        return false;
       }
-      return false;
-    } catch {
-      console.warn('加载 Cookie 失败，将重新登录');
+
+      console.log(`  加载 ${validCookies.length} 个有效 Cookie`);
+      await context.addCookies(validCookies as Cookie[]);
+      return true;
+    } catch (e) {
+      console.warn('加载 Cookie 失败，将重新登录:', e);
       return false;
     }
   }
 
   /**
-   * 将当前 Cookie 保存到 SQLite（UPSERT）
+   * 将 sameSite 值规范化为 Playwright 接受的枚举
+   * Playwright 只接受 'Strict' | 'Lax' | 'None'（首字母大写）
    */
-  private async saveCookies(context: BrowserContext): Promise<void> {
+  private normalizeSameSite(value: string): SameSiteValue {
+    const lower = value.toLowerCase().trim();
+    if (lower === 'strict') return 'Strict';
+    if (lower === 'none') return 'None';
+    return 'Lax'; // 默认值
+  }
+
+  /**
+   * 将当前 Context 中的 Cookie 保存到 SQLite（UPSERT）
+   * 可在爬取完成后调用，确保服务端刷新的 token 被持久化
+   */
+  async saveCookiesFromContext(context: BrowserContext): Promise<void> {
     const cookies = await context.cookies();
     const cookieJson = JSON.stringify({ cookies });
     const db = getDb(this.dbPath);

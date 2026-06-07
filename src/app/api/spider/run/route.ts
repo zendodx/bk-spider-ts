@@ -156,6 +156,15 @@ export async function POST(request: NextRequest) {
           }
 
           sendLog(`✓ 爬取完成，共保存 ${totalSaved} 条数据`);
+
+          // 爬取完成后保存最新 Cookie（服务端可能刷新了 token）
+          try {
+            await auth.saveCookiesFromContext(context);
+            sendLog('✓ Cookie 已更新至数据库');
+          } catch (e) {
+            sendLog(`⚠ Cookie 更新失败: ${e}`);
+          }
+
           sendEvent('finished', { success: true, totalSaved, message: `成功完成，保存 ${totalSaved} 条数据` });
 
         } catch (e) {
