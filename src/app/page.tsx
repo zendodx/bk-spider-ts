@@ -10,9 +10,10 @@ import FavoritesPanel from '@/components/FavoritesPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 import CleanerPanel from '@/components/CleanerPanel';
 import BackupPanel from '@/components/BackupPanel';
+import ExpiredListingsPanel from '@/components/ExpiredListingsPanel';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 
-type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'favorites' | 'cleaner' | 'settings' | 'backup';
+type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'favorites' | 'cleaner' | 'settings' | 'backup';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
@@ -24,6 +25,7 @@ export default function Home() {
     { id: 'loan',      label: '贷款计算', icon: '🏦' },
     { id: 'stats',     label: '价格统计', icon: '📊' },
     { id: 'listings',  label: '房源列表', icon: '🏘️' },
+    { id: 'expired',   label: '失效房源', icon: '🏚️' },
     { id: 'favorites', label: '房源收藏', icon: '⭐' },
     { id: 'cleaner',   label: '数据清洗', icon: '🧹' },
     { id: 'settings',  label: '系统设置', icon: '⚙️' },
@@ -105,6 +107,7 @@ export default function Home() {
         <div className="h-full" style={{ display: activeTab === 'loan'      ? 'block' : 'none' }}><LoanPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'stats'     ? 'block' : 'none' }}><StatsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'listings'  ? 'block' : 'none' }}><ListingsPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'expired'   ? 'block' : 'none' }}><ExpiredListingsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'favorites' ? 'block' : 'none' }}><FavoritesPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'cleaner'   ? 'block' : 'none' }}><CleanerPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'settings'  ? 'block' : 'none' }}><SettingsPanel /></div>
