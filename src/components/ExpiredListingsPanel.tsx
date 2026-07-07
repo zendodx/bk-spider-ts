@@ -56,6 +56,330 @@ function today(): string {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
 }
 
+// ===== 价格历史数据类型 =====
+interface PriceHistoryRow {
+  id: number;
+  crawl_date: string;
+  crawl_time: string;
+  unit_price: number | null;
+  total_price: number | null;
+  follow_count: number;
+}
+
+// ===== 趋势箭头（行内小箭头）=====
+function TrendArrow({ curr, prev }: { curr: number | null; prev: number | null }) {
+  if (curr == null || prev == null) return null;
+  const diff = curr - prev;
+  if (Math.abs(diff) < 0.01) return null;
+  const isUp = diff > 0;
+  return (
+    <span
+      className={`ml-1 text-xs font-bold cursor-default ${isUp ? 'text-red-500' : 'text-green-600'}`}
+      title={`变动：${isUp ? '+' : ''}${Math.round(diff).toLocaleString()}`}
+    >
+      {isUp ? '↑' : '↓'}
+    </span>
+  );
+}
+
+// ===== 价格历史弹窗 =====
+function PriceHistoryModal({
+  detailUrl,
+  title,
+  onClose,
+}: {
+  detailUrl: string;
+  title: string;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+  const [rows, setRows]       = useState<PriceHistoryRow[]>([]);
+  const [inputUrl, setInputUrl]   = useState(detailUrl);
+  const [queriedUrl, setQueriedUrl] = useState('');
+
+  const fmtUnit  = (v: number | null) => v == null ? '-' : `${(Number(v) * 10000).toFixed(0)}`;
+  const fmtPrice = (v: number | null) => v == null ? '-' : Number(v).toFixed(2);
+
+  const handleQuery = useCallback(async (url: string) => {
+    const u = url.trim();
+    if (!u) return;
+    setLoading(true); setError(''); setRows([]); setQueriedUrl(u);
+    try {
+      const res  = await fetch(`/api/listings/price-history?detailUrl=${encodeURIComponent(u)}`);
+      const json = await res.json();
+      if (json.success) setRows(json.data ?? []);
+      else setError(json.error ?? '查询失败');
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 首次自动查询
+  useEffect(() => { if (detailUrl) handleQuery(detailUrl); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[85vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-gray-700">📈 价格历史</span>
+            {title && <span className="text-xs text-gray-400 truncate max-w-xs" title={title}>{title}</span>}
+          </div>
+          <button onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-600 text-lg leading-none" aria-label="关闭">✕</button>
+        </div>
+
+        {/* URL 查询栏 */}
+        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputUrl}
+              onChange={e => setInputUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleQuery(inputUrl); }}
+              placeholder="输入 detail_url 查询价格历史..."
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+            />
+            <button
+              onClick={() => handleQuery(inputUrl)}
+              disabled={loading}
+              className="px-4 py-1.5 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {loading ? '查询中...' : '🔍 查询'}
+            </button>
+          </div>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto px-4 py-3">
+          {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">❌ {error}</div>}
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm">加载中...</span>
+            </div>
+          )}
+          {!loading && !error && rows.length === 0 && queriedUrl && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <span className="text-4xl mb-3">📭</span>
+              <p className="text-sm">暂无该房源的价格历史记录</p>
+            </div>
+          )}
+          {rows.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-400 mb-2">共 {rows.length} 条记录，按采集日期倒序</div>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600">#</th>
+                    <th className="px-3 py-2 text-center font-semibold text-gray-600 whitespace-nowrap">采集日期</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap bg-orange-50">单价<br /><span className="font-normal text-gray-400">(元/平)</span></th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap bg-blue-50">总价<br /><span className="font-normal text-gray-400">(万)</span></th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">关注</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rows.map((row, idx) => {
+                    const nextRow = rows[idx + 1] ?? null;
+                    return (
+                      <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2 text-right text-gray-400">{idx + 1}</td>
+                        <td className="px-3 py-2 text-center text-gray-600 whitespace-nowrap font-mono">{row.crawl_date}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-orange-700 bg-orange-50/40 whitespace-nowrap">
+                          {fmtUnit(row.unit_price)}
+                          <TrendArrow curr={row.unit_price} prev={nextRow?.unit_price ?? null} />
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-blue-700 bg-blue-50/40 whitespace-nowrap">
+                          {fmtPrice(row.total_price)}
+                          <TrendArrow curr={row.total_price} prev={nextRow?.total_price ?? null} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500">{row.follow_count ?? 0}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 底部链接 */}
+        {queriedUrl && (
+          <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+            <a href={queriedUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline break-all">{queriedUrl}</a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== 备注弹窗 =====
+const NOTE_TEMPLATE = () => `- 基本：\n- 装修：\n- 抵押：\n- 学区：\n- 价格：\n- 缺点：\n- 优点：`;
+
+function NoteModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: ExpiredListingRow;
+  onClose: () => void;
+  onSaved: (detailUrl: string, note: string) => void;
+}) {
+  const [note, setNote]       = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [error, setError]     = useState('');
+
+  const fmtUnit  = (v: number | null) => v == null ? '-' : `${(Number(v) * 10000).toFixed(0)} 元/平`;
+  const fmtPrice = (v: number | null) => v == null ? '-' : `${Number(v).toFixed(2)} 万`;
+  const fmtArea  = (v: number | null) => v == null ? '-' : `${Number(v).toFixed(1)} ㎡`;
+
+  // 加载已有备注
+  useEffect(() => {
+    if (!row.detail_url) { setLoading(false); return; }
+    fetch(`/api/listings/note?detailUrl=${encodeURIComponent(row.detail_url)}`)
+      .then(r => r.json())
+      .then(json => { setNote(json.success ? (json.note ?? NOTE_TEMPLATE()) : NOTE_TEMPLATE()); })
+      .catch(() => setNote(NOTE_TEMPLATE()))
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const handleSave = async () => {
+    if (!row.detail_url) return;
+    setSaving(true); setError('');
+    try {
+      const res  = await fetch('/api/listings/note', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ detailUrl: row.detail_url, note }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSaved(true);
+        onSaved(row.detail_url, note);
+        setTimeout(() => onClose(), 600);
+      } else {
+        setError(json.error ?? '保存失败');
+      }
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[88vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 flex-shrink-0">
+          <span className="text-base font-semibold text-gray-700">📝 房源备注</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+          {/* 房源基本信息 */}
+          <div className="bg-gray-50 rounded-lg px-4 py-3 space-y-1.5">
+            <p className="text-sm font-medium text-gray-800 leading-snug">{row.title || row.community}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <span>🏘️ {row.community}</span>
+              {row.house_type && <span>🏠 {row.house_type}</span>}
+              {row.area != null && <span>📐 {fmtArea(row.area)}</span>}
+              {row.floor_info && <span>🏢 {row.floor_info}</span>}
+              {row.orientation && <span>🧭 {row.orientation}</span>}
+              {row.build_year && <span>📅 {row.build_year}年建</span>}
+            </div>
+            <div className="flex gap-4 text-xs mt-1">
+              <span className="text-orange-600 font-semibold">{fmtUnit(row.unit_price)}</span>
+              <span className="text-blue-600 font-semibold">{fmtPrice(row.total_price)}</span>
+              {row.detail_url && (
+                <a href={row.detail_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate max-w-[200px]">🔗 查看详情</a>
+              )}
+            </div>
+            <div className="text-xs text-gray-400">
+              最后出现：{row.last_seen_date} <DaysAgoBadge lastSeenDate={row.last_seen_date} />
+            </div>
+          </div>
+
+          {/* 备注输入 */}
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-gray-400">
+              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              加载备注中...
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-gray-600">备注内容</label>
+                <button type="button" onClick={() => setNote(NOTE_TEMPLATE())} className="text-xs text-gray-400 hover:text-blue-500 transition-colors">重置模板</button>
+              </div>
+              <textarea
+                value={note}
+                onChange={e => { setNote(e.target.value); setSaved(false); }}
+                rows={10}
+                maxLength={2000}
+                className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y font-mono leading-relaxed"
+                placeholder="填写备注信息..."
+              />
+              <div className="text-right text-xs text-gray-400 mt-0.5">{note.length}/2000</div>
+            </div>
+          )}
+
+          {error && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">❌ {error}</div>}
+        </div>
+
+        {/* 底部按钮 */}
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">取消</button>
+          <button
+            onClick={handleSave}
+            disabled={saving || saved || loading}
+            className={`px-6 py-2 text-sm font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+              saved ? 'bg-green-500 text-white cursor-default'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+            }`}
+          >
+            {saved ? '✓ 已保存' : saving ? '保存中...' : '💾 保存备注'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== 图片预览弹窗 =====
 function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   useEffect(() => {
@@ -267,6 +591,14 @@ export default function ExpiredListingsPanel() {
   // 图片弹窗
   const [imgModal, setImgModal] = useState<{ url: string; title: string } | null>(null);
 
+  // 价格历史弹窗
+  const [priceHistoryModal, setPriceHistoryModal] = useState<{ detailUrl: string; title: string } | null>(null);
+
+  // 备注弹窗
+  const [noteModal, setNoteModal] = useState<ExpiredListingRow | null>(null);
+  // 有备注的 detail_url -> 备注内容（缓存，用于列表图标显示）
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+
   // 展开图片的行
   const [expandedImgRows, setExpandedImgRows] = useState<Set<number>>(new Set());
 
@@ -354,6 +686,22 @@ export default function ExpiredListingsPanel() {
         setRows(json.data ?? []);
         setActualBaseDate(json.baseDate ?? '');
         setLatestCount(json.latestCount ?? 0);
+        setNoteMap({});
+        // 批量拉取备注
+        const urls = (json.data as ExpiredListingRow[] ?? []).map((r: ExpiredListingRow) => r.detail_url).filter(Boolean) as string[];
+        if (urls.length > 0) {
+          const noteResult: Record<string, string> = {};
+          await Promise.all(
+            urls.map(async (url) => {
+              try {
+                const r = await fetch(`/api/listings/note?detailUrl=${encodeURIComponent(url)}`);
+                const j = await r.json();
+                if (j.success && j.note) noteResult[url] = j.note;
+              } catch { /* ignore */ }
+            })
+          );
+          setNoteMap(noteResult);
+        }
       } else {
         setError(json.error ?? '查询失败');
       }
@@ -400,6 +748,24 @@ export default function ExpiredListingsPanel() {
       {/* ===== 图片弹窗 ===== */}
       {imgModal && (
         <ImageModal url={imgModal.url} title={imgModal.title} onClose={() => setImgModal(null)} />
+      )}
+
+      {/* ===== 价格历史弹窗 ===== */}
+      {priceHistoryModal && (
+        <PriceHistoryModal
+          detailUrl={priceHistoryModal.detailUrl}
+          title={priceHistoryModal.title}
+          onClose={() => setPriceHistoryModal(null)}
+        />
+      )}
+
+      {/* ===== 备注弹窗 ===== */}
+      {noteModal && (
+        <NoteModal
+          row={noteModal}
+          onClose={() => setNoteModal(null)}
+          onSaved={(detailUrl, note) => setNoteMap(prev => ({ ...prev, [detailUrl]: note }))}
+        />
       )}
 
       {/* ===== 筛选条件区 ===== */}
@@ -704,6 +1070,9 @@ export default function ExpiredListingsPanel() {
                             expandedImgRows={expandedImgRows}
                             setExpandedImgRows={setExpandedImgRows}
                             onOpenImg={(url, title) => setImgModal({ url, title })}
+                            onOpenPriceHistory={(url, title) => setPriceHistoryModal({ detailUrl: url, title })}
+                            onOpenNote={(row) => setNoteModal(row)}
+                            hasNote={!!(row.detail_url && noteMap[row.detail_url])}
                           />
                         ))}
                       </tbody>
@@ -746,6 +1115,9 @@ export default function ExpiredListingsPanel() {
                         expandedImgRows={expandedImgRows}
                         setExpandedImgRows={setExpandedImgRows}
                         onOpenImg={(url, title) => setImgModal({ url, title })}
+                        onOpenPriceHistory={(url, title) => setPriceHistoryModal({ detailUrl: url, title })}
+                        onOpenNote={(row) => setNoteModal(row)}
+                        hasNote={!!(row.detail_url && noteMap[row.detail_url])}
                         showLastSeen
                       />
                     ))}
@@ -770,6 +1142,9 @@ function ListingTableRow({
   expandedImgRows,
   setExpandedImgRows,
   onOpenImg,
+  onOpenPriceHistory,
+  onOpenNote,
+  hasNote = false,
   showLastSeen = false,
 }: {
   row: ExpiredListingRow;
@@ -780,6 +1155,9 @@ function ListingTableRow({
   expandedImgRows: Set<number>;
   setExpandedImgRows: React.Dispatch<React.SetStateAction<Set<number>>>;
   onOpenImg: (url: string, title: string) => void;
+  onOpenPriceHistory: (url: string, title: string) => void;
+  onOpenNote: (row: ExpiredListingRow) => void;
+  hasNote?: boolean;
   showLastSeen?: boolean;
 }) {
   const hasImg = !!row.header_image;
@@ -870,6 +1248,30 @@ function ListingTableRow({
         {/* 操作 */}
         <td className="px-3 py-2.5 text-center whitespace-nowrap">
           <div className="flex items-center justify-center gap-1">
+            {/* 价格历史 */}
+            {row.detail_url && (
+              <button
+                onClick={() => onOpenPriceHistory(row.detail_url!, row.title || row.community)}
+                title="查看价格历史"
+                className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors text-sm"
+              >
+                📈
+              </button>
+            )}
+            {/* 备注 */}
+            {row.detail_url && (
+              <button
+                onClick={() => onOpenNote(row)}
+                title={hasNote ? '查看/编辑备注' : '添加备注'}
+                className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors text-sm ${
+                  hasNote
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-700'
+                    : 'bg-gray-50 hover:bg-gray-100 text-gray-400'
+                }`}
+              >
+                📝
+              </button>
+            )}
             {/* 查看详情链接 */}
             {row.detail_url && (
               <a
