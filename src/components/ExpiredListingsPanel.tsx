@@ -1039,12 +1039,25 @@ export default function ExpiredListingsPanel() {
                       <span className="text-xs text-gray-400">{groupRows.length} 套</span>
                     </div>
                     {/* 该组的房源表格 */}
-                    <table className="w-full text-xs">
+                    <table className="w-full text-xs table-fixed">
+                      <colgroup>
+                        <col className="w-8" />
+                        <col className="w-10" />
+                        <col className="w-48" />
+                        <col className="w-24" />
+                        <col className="w-20" />
+                        <col className="w-20" />
+                        <col className="w-24" />
+                        <col className="w-28" />
+                        <col className="w-24" />
+                        <col className="w-16" />
+                        <col className="w-24" />
+                      </colgroup>
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="px-3 py-2 text-left font-semibold text-gray-500 w-8">#</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-500">#</th>
                           <th className="px-3 py-2 text-left font-semibold text-gray-500">图</th>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-500 min-w-[160px]">房源信息</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-500">房源信息</th>
                           <th className="px-3 py-2 text-right font-semibold text-gray-500 whitespace-nowrap bg-orange-50">
                             单价<br /><span className="font-normal text-gray-400">(元/平)</span>
                           </th>
@@ -1053,6 +1066,7 @@ export default function ExpiredListingsPanel() {
                           </th>
                           <th className="px-3 py-2 text-right font-semibold text-gray-500 whitespace-nowrap">面积(㎡)</th>
                           <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">楼层</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">最后出现</th>
                           <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">首次出现</th>
                           <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">出现天数</th>
                           <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">操作</th>
@@ -1083,12 +1097,25 @@ export default function ExpiredListingsPanel() {
             ) : (
               // 普通表格视图
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs table-fixed">
+                  <colgroup>
+                    <col className="w-8" />
+                    <col className="w-10" />
+                    <col className="w-48" />
+                    <col className="w-24" />
+                    <col className="w-20" />
+                    <col className="w-20" />
+                    <col className="w-24" />
+                    <col className="w-28" />
+                    <col className="w-24" />
+                    <col className="w-16" />
+                    <col className="w-24" />
+                  </colgroup>
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 w-8">#</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500">#</th>
                       <th className="px-3 py-2.5 text-left font-semibold text-gray-500">图</th>
-                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 min-w-[160px]">房源信息</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500">房源信息</th>
                       <th className="px-3 py-2.5 text-right font-semibold text-gray-500 whitespace-nowrap bg-orange-50">
                         单价<br /><span className="font-normal text-gray-400">(元/平)</span>
                       </th>
@@ -1118,7 +1145,6 @@ export default function ExpiredListingsPanel() {
                         onOpenPriceHistory={(url, title) => setPriceHistoryModal({ detailUrl: url, title })}
                         onOpenNote={(row) => setNoteModal(row)}
                         hasNote={!!(row.detail_url && noteMap[row.detail_url])}
-                        showLastSeen
                       />
                     ))}
                   </tbody>
@@ -1145,7 +1171,6 @@ function ListingTableRow({
   onOpenPriceHistory,
   onOpenNote,
   hasNote = false,
-  showLastSeen = false,
 }: {
   row: ExpiredListingRow;
   idx: number;
@@ -1158,7 +1183,6 @@ function ListingTableRow({
   onOpenPriceHistory: (url: string, title: string) => void;
   onOpenNote: (row: ExpiredListingRow) => void;
   hasNote?: boolean;
-  showLastSeen?: boolean;
 }) {
   const hasImg = !!row.header_image;
   const imgExpanded = expandedImgRows.has(row.id);
@@ -1198,7 +1222,7 @@ function ListingTableRow({
             {row.orientation && <span className="text-gray-400">{row.orientation}</span>}
             {row.build_year && <span className="text-gray-400">{row.build_year}年建</span>}
             {row.tags && (
-              <span className="text-blue-400 truncate max-w-[140px]" title={row.tags}>
+              <span className="text-blue-400 truncate max-w-full" title={row.tags}>
                 {row.tags.split(',').slice(0, 2).join(' ')}
               </span>
             )}
@@ -1225,13 +1249,11 @@ function ListingTableRow({
           {row.floor_info || '—'}
         </td>
 
-        {/* 最后出现（非分组视图才显示） */}
-        {showLastSeen && (
-          <td className="px-3 py-2.5 text-center whitespace-nowrap">
-            <div className="font-mono text-gray-700">{row.last_seen_date}</div>
-            <DaysAgoBadge lastSeenDate={row.last_seen_date} />
-          </td>
-        )}
+        {/* 最后出现 */}
+        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+          <div className="font-mono text-gray-700 text-xs">{row.last_seen_date}</div>
+          <DaysAgoBadge lastSeenDate={row.last_seen_date} />
+        </td>
 
         {/* 首次出现 */}
         <td className="px-3 py-2.5 text-center font-mono text-gray-500 whitespace-nowrap">
@@ -1301,7 +1323,7 @@ function ListingTableRow({
       {/* 展开的图片行 */}
       {imgExpanded && row.header_image && (
         <tr>
-          <td colSpan={showLastSeen ? 11 : 10} className="px-3 pb-3 pt-1 bg-gray-50/60">
+          <td colSpan={11} className="px-3 pb-3 pt-1 bg-gray-50/60">
             <div className="flex items-start gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
