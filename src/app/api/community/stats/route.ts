@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const keyword  = searchParams.get('keyword')?.trim() ?? '';
+    const city     = searchParams.get('city')?.trim() ?? '';
     const allowedOrder = ['listing_count', 'total_unique', 'avg_unit_price', 'latest_date', 'community', 'crawl_days'];
     const rawOrderBy   = searchParams.get('orderBy')?.trim() ?? 'listing_count';
     const orderBy      = allowedOrder.includes(rawOrderBy) ? rawOrderBy : 'listing_count';
@@ -59,8 +60,11 @@ export async function GET(request: NextRequest) {
 
     const db = getDb(getDBPath());
 
-    const keywordCond = keyword ? `AND community LIKE '%' || ? || '%'` : '';
-    const keywordParam = keyword ? [keyword] : [];
+    const extraConds: string[] = [];
+    const extraParams: unknown[] = [];
+    if (keyword) { extraConds.push(`community LIKE '%' || ? || '%'`); extraParams.push(keyword); }
+    if (city)    { extraConds.push(`city LIKE '%' || ? || '%'`);      extraParams.push(city); }
+    const extraWhere = extraConds.length ? 'AND ' + extraConds.join(' AND ') : '';
 
     // Step 1: 查询每个小区的基础信息 + 最新采集日
     const communitySql = `
@@ -77,11 +81,11 @@ export async function GET(request: NextRequest) {
       FROM house_listings
       WHERE is_deleted = 0
         AND community != ''
-        ${keywordCond}
+        ${extraWhere}
       GROUP BY community
     `;
 
-    const communities = db.prepare(communitySql).all(...keywordParam) as {
+    const communities = db.prepare(communitySql).all(...extraParams) as {
       community: string;
       province: string;
       city: string;

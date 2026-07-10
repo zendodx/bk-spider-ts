@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const community   = searchParams.get('community')?.trim() ?? '';
+    const city        = searchParams.get('city')?.trim() ?? '';         // 城市过滤
     let   baseDate    = searchParams.get('baseDate')?.trim() ?? '';   // YYYY-MM-DD，基准（最新）日期
     const houseType   = searchParams.get('houseType')?.trim() ?? '';
     const excludeBasement = searchParams.get('excludeBasement') !== 'false';
@@ -77,13 +78,16 @@ export async function GET(request: NextRequest) {
 
     // 1. 若未传 baseDate，则自动取该小区最新采集日期
     if (!baseDate) {
+      const baseConds = ['community LIKE ?', 'is_deleted = 0'];
+      const basePs: unknown[] = [`%${community}%`];
+      if (city) { baseConds.push('city LIKE ?'); basePs.push(`%${city}%`); }
       const row = db.prepare(`
         SELECT date(created_at) AS latest_date
         FROM house_listings
-        WHERE community LIKE ? AND is_deleted = 0
+        WHERE ${baseConds.join(' AND ')}
         ORDER BY created_at DESC
         LIMIT 1
-      `).get(`%${community}%`) as { latest_date: string } | undefined;
+      `).get(...basePs) as { latest_date: string } | undefined;
 
       if (!row) {
         return Response.json({ success: true, data: [], baseDate: '', latestDate: '', total: 0 });
@@ -92,14 +96,14 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. 获取基准日期当天的所有 detail_url 集合（去重，保留最新记录）
+    const latestConds = ['community LIKE ?', 'is_deleted = 0', 'date(created_at) = ?', 'detail_url IS NOT NULL'];
+    const latestPs: unknown[] = [`%${community}%`, baseDate];
+    if (city) { latestConds.push('city LIKE ?'); latestPs.push(`%${city}%`); }
     const latestUrlsResult = db.prepare(`
       SELECT DISTINCT detail_url
       FROM house_listings
-      WHERE community LIKE ?
-        AND is_deleted = 0
-        AND date(created_at) = ?
-        AND detail_url IS NOT NULL
-    `).all(`%${community}%`, baseDate) as { detail_url: string }[];
+      WHERE ${latestConds.join(' AND ')}
+    `).all(...latestPs) as { detail_url: string }[];
 
     const latestUrlSet = new Set(latestUrlsResult.map(r => r.detail_url));
 
@@ -119,6 +123,12 @@ export async function GET(request: NextRequest) {
       't.detail_url IS NOT NULL',
     ];
     const params: unknown[] = [`%${community}%`, baseDate];
+
+    if (city) {
+      innerConds.push('city LIKE ?');
+      outerConds.push('t.city LIKE ?');
+      params.push(`%${city}%`);
+    }
 
     if (houseType) {
       innerConds.push('house_type LIKE ?');

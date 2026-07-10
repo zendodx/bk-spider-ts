@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const community = searchParams.get('community')?.trim() ?? '';
+    const city      = searchParams.get('city')?.trim() ?? '';
 
     if (!community) {
       return Response.json({ success: false, error: '参数缺失：community 为必填项', dates: [] }, { status: 400 });
@@ -22,13 +23,17 @@ export async function GET(request: NextRequest) {
 
     const db = getDb(getDBPath());
 
+    const conditions = ['community LIKE ?', 'is_deleted = 0'];
+    const params: unknown[] = [`%${community}%`];
+    if (city) { conditions.push('city LIKE ?'); params.push(`%${city}%`); }
+
     const rows = db.prepare(`
       SELECT DISTINCT date(created_at) AS crawl_date
       FROM house_listings
-      WHERE community LIKE ? AND is_deleted = 0
+      WHERE ${conditions.join(' AND ')}
       ORDER BY crawl_date DESC
       LIMIT 365
-    `).all(`%${community}%`) as { crawl_date: string }[];
+    `).all(...params) as { crawl_date: string }[];
 
     const dates = rows.map(r => r.crawl_date);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCityContext } from '@/lib/CityContext';
 
 interface StatRow {
   stat_date: string;
@@ -695,6 +696,7 @@ ${allDataTable}
 // 主组件
 // ─────────────────────────────────────────────
 export default function StatsPanel() {
+  const { selectedCityFilter } = useCityContext();
   const [community, setCommunity] = useState('');
   const [houseType, setHouseType] = useState('');
 const [excludeBasement, setExcludeBasement] = useState(true);
@@ -779,6 +781,7 @@ const params = new URLSearchParams({
 });
 if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
       if (houseType) params.set('houseType', houseType);
+      if (selectedCityFilter) params.set('city', selectedCityFilter);
       if (areaEnabled) {
         const mn = parseFloat(areaMin);
         const mx = parseFloat(areaMax);
@@ -800,7 +803,7 @@ if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
     } finally {
       setLoading(false);
     }
-  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, limit, areaEnabled, areaMin, areaMax]);
+  }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, limit, areaEnabled, areaMin, areaMax, selectedCityFilter]);
 
   // 万/平 → 元/平 显示
   const fmtUnitPrice = (v: number | null) => {

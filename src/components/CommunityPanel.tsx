@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCityContext } from '@/lib/CityContext';
 
 interface CommunityStatRow {
   community: string;
@@ -86,6 +87,7 @@ function SortTh({
 }
 
 export default function CommunityPanel() {
+  const { selectedCityFilter } = useCityContext();
   const [keyword, setKeyword]     = useState('');
   const [inputKeyword, setInputKeyword] = useState('');
   const [sortKey, setSortKey]     = useState<`${OrderBy}|${'asc'|'desc'}`>('listing_count|desc');
@@ -101,12 +103,14 @@ export default function CommunityPanel() {
 
   const [orderBy, order] = sortKey.split('|') as [OrderBy, 'asc' | 'desc'];
 
-  const fetchData = useCallback(async (kw: string, ob: OrderBy, od: string, lim: number) => {
+  const fetchData = useCallback(async (kw: string, ob: OrderBy, od: string, lim: number, cityFilter?: string) => {
     setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams({ orderBy: ob, order: od, limit: String(lim) });
       if (kw) params.set('keyword', kw);
+      const cf = cityFilter ?? selectedCityFilter;
+      if (cf) params.set('city', cf);
       const res  = await fetch(`/api/community/stats?${params}`);
       const json = await res.json();
       if (json.success) {
@@ -121,20 +125,20 @@ export default function CommunityPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedCityFilter]);
 
   // 首次加载
   useEffect(() => {
     fetchData('', 'listing_count', 'desc', 200);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchData]);
 
   // 排序/limit 变化时重新查询
   useEffect(() => {
     if (!queried) return;
     fetchData(keyword, orderBy, order, limit);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortKey, limit]);
+  }, [sortKey, limit, selectedCityFilter]);
 
   // 关键词防抖查询
   const handleKeywordChange = (val: string) => {

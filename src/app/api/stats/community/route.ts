@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const community = searchParams.get('community')?.trim() ?? '';
+    const city      = searchParams.get('city')?.trim() ?? '';
     const houseType = searchParams.get('houseType')?.trim() ?? '';
     const excludeBasement = searchParams.get('excludeBasement') !== 'false';
     const excludeLowFloor = searchParams.get('excludeLowFloor') !== 'false';
@@ -55,6 +56,11 @@ export async function GET(request: NextRequest) {
 
     conditions.push('community LIKE ?');
     params.push(`%${community}%`);
+
+    if (city) {
+      conditions.push('city LIKE ?');
+      params.push(`%${city}%`);
+    }
 
     if (houseType) {
       conditions.push('house_type LIKE ?');

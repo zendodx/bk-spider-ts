@@ -15,31 +15,25 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const keyword = searchParams.get('keyword')?.trim() ?? '';
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '30', 10), 100);
+    const city    = searchParams.get('city')?.trim() ?? '';
+    const limit   = Math.min(parseInt(searchParams.get('limit') ?? '30', 10), 100);
 
     const db = getDb(getDBPath());
 
-    let rows: { community: string }[];
+    const conds: string[] = ['is_deleted = 0', "community != ''"];
+    const qParams: unknown[] = [];
 
-    if (keyword) {
-      rows = db.prepare(`
-        SELECT DISTINCT community
-        FROM house_listings
-        WHERE is_deleted = 0
-          AND community LIKE ?
-        ORDER BY community
-        LIMIT ?
-      `).all(`%${keyword}%`, limit) as { community: string }[];
-    } else {
-      rows = db.prepare(`
-        SELECT DISTINCT community
-        FROM house_listings
-        WHERE is_deleted = 0
-          AND community != ''
-        ORDER BY community
-        LIMIT ?
-      `).all(limit) as { community: string }[];
-    }
+    if (keyword) { conds.push('community LIKE ?'); qParams.push(`%${keyword}%`); }
+    if (city)    { conds.push('city LIKE ?');      qParams.push(`%${city}%`); }
+    qParams.push(limit);
+
+    const rows = db.prepare(`
+      SELECT DISTINCT community
+      FROM house_listings
+      WHERE ${conds.join(' AND ')}
+      ORDER BY community
+      LIMIT ?
+    `).all(...qParams) as { community: string }[];
 
     const communities: string[] = rows.map(r => r.community);
     return Response.json({ success: true, data: communities });

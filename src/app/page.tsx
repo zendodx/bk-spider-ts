@@ -13,12 +13,14 @@ import BackupPanel from '@/components/BackupPanel';
 import ExpiredListingsPanel from '@/components/ExpiredListingsPanel';
 import CommunityPanel from '@/components/CommunityPanel';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
+import { useCityContext } from '@/lib/CityContext';
 
 type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'community' | 'favorites' | 'cleaner' | 'settings' | 'backup';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
   const { theme, setTheme } = useTheme();
+  const { cityNames, selectedCity, setSelectedCity, selectedHost } = useCityContext();
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'spider',    label: '爬虫采集', icon: '🕷️' },
@@ -45,8 +47,37 @@ export default function Home() {
         <span className="text-2xl">🏡</span>
         <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>贝壳找房爬虫</h1>
 
+        {/* Logo 右侧：城市选择下拉框 */}
+        <div className="flex items-center gap-1.5">
+          <select
+            value={selectedCity}
+            onChange={e => setSelectedCity(e.target.value)}
+            className="text-sm font-medium px-2.5 py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+            style={{
+              background: 'var(--bg-primary)',
+              color: 'var(--text-primary)',
+              borderColor: selectedCity ? '#3b82f6' : 'var(--border)',
+              minWidth: 100,
+            }}
+            title={selectedCity ? `当前城市：${selectedCity}\nHOST：${selectedHost}` : '显示全部城市的数据'}
+          >
+            <option value="">🌏 全部城市</option>
+            {cityNames.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          {selectedCity && (
+            <button
+              onClick={() => setSelectedCity('')}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              title="清除城市筛选"
+            >✕</button>
+          )}
+        </div>
+
         {/* 右侧：版本信息 + 主题切换 */}
         <div className="ml-auto flex items-center gap-3">
+
           <span className="text-xs" style={{ color: 'var(--text-hint)' }}>
             TypeScript + Playwright + Next.js
           </span>

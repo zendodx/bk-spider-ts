@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCityContext } from '@/lib/CityContext';
 
 // ===== 失效房源数据类型 =====
 interface ExpiredListingRow {
@@ -556,6 +557,7 @@ function DaysAgoBadge({ lastSeenDate }: { lastSeenDate: string }) {
 }
 
 export default function ExpiredListingsPanel() {
+  const { selectedCityFilter } = useCityContext();
   // 筛选条件
   const [community, setCommunity]     = useState('');
   const [baseDate, setBaseDate]       = useState(today());
@@ -607,7 +609,8 @@ export default function ExpiredListingsPanel() {
     const c = community.trim();
     if (!c) { setActiveDates(new Set()); return; }
     let cancelled = false;
-    fetch(`/api/listings/dates?community=${encodeURIComponent(c)}`)
+    const _datesCityQ = selectedCityFilter ? `&city=${encodeURIComponent(selectedCityFilter)}` : '';
+fetch(`/api/listings/dates?community=${encodeURIComponent(c)}${_datesCityQ}`)
       .then(r => r.json())
       .then(json => {
         if (!cancelled && json.success) setActiveDates(new Set(json.dates as string[]));
@@ -621,9 +624,10 @@ export default function ExpiredListingsPanel() {
     const timer = setTimeout(async () => {
       setCommunityLoading(true);
       try {
+        const _cq = selectedCityFilter ? `&city=${encodeURIComponent(selectedCityFilter)}` : '';
         const url = communityKeyword
-          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30`
-          : `/api/community/search?limit=30`;
+          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30${_cq}`
+          : `/api/community/search?limit=30${_cq}`;
         const res = await fetch(url);
         const json = await res.json();
         if (json.success) setCommunityOptions(json.data ?? []);
@@ -673,6 +677,7 @@ export default function ExpiredListingsPanel() {
       });
       if (baseDate) params.set('baseDate', baseDate);
       if (houseType) params.set('houseType', houseType);
+      if (selectedCityFilter) params.set('city', selectedCityFilter);
       if (areaEnabled) {
         const mn = parseFloat(areaMin);
         const mx = parseFloat(areaMax);

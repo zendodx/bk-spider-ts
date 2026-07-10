@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { ThemeProvider } from '@/lib/theme';
+import { CityProvider } from '@/lib/CityContext';
 
 export const metadata: Metadata = {
   title: '贝壳找房爬虫',
@@ -16,7 +17,9 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <ThemeProvider>
-          {children}
+          <CityProvider>
+            {children}
+          </CityProvider>
         </ThemeProvider>
       </body>
     </html>

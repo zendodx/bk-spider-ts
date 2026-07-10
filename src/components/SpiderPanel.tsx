@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCityContext } from '@/lib/CityContext';
 
 interface SpiderParams {
   host: string;
@@ -33,6 +34,7 @@ interface LogEntry {
 }
 
 export default function SpiderPanel() {
+  const { selectedCityFilter, selectedHost } = useCityContext();
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [params, setParams] = useState<SpiderParams>({
     host: 'https://jn.ke.com',
@@ -69,9 +71,10 @@ export default function SpiderPanel() {
     const timer = setTimeout(async () => {
       setCommunityLoading(true);
       try {
+        const _cq = selectedCityFilter ? `&city=${encodeURIComponent(selectedCityFilter)}` : '';
         const url = communityKeyword
-          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30`
-          : `/api/community/search?limit=30`;
+          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30${_cq}`
+          : `/api/community/search?limit=30${_cq}`;
         const res = await fetch(url);
         const json = await res.json();
         if (json.success) setCommunityOptions(json.data ?? []);
@@ -82,7 +85,7 @@ export default function SpiderPanel() {
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [communityKeyword]);
+  }, [communityKeyword, selectedCityFilter]);
 
   // 点击组件外部时关闭下拉
   useEffect(() => {
@@ -94,6 +97,13 @@ export default function SpiderPanel() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // 城市切换时自动同步 HOST
+  useEffect(() => {
+    if (selectedHost) {
+      setParams(prev => ({ ...prev, host: selectedHost }));
+    }
+  }, [selectedHost]);
 
   // 加载映射和设置
   useEffect(() => {

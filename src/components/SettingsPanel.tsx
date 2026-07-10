@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useCityContext } from '@/lib/CityContext';
 
 interface Settings {
   host: string;
@@ -16,6 +17,7 @@ interface Settings {
   exportCsv: boolean;
   dataDir: string;
   dbPath: string;
+  cityHostMap: Record<string, string>;
 }
 
 interface MappingEntry {
@@ -24,6 +26,7 @@ interface MappingEntry {
 }
 
 export default function SettingsPanel() {
+  const { reloadCityMap } = useCityContext();
   const [settings, setSettings] = useState<Settings>({
     host: 'https://jn.ke.com',
     sug: '',
@@ -38,6 +41,7 @@ export default function SettingsPanel() {
     exportCsv: true,
     dataDir: '',
     dbPath: '',
+    cityHostMap: {},
   });
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [mappingEntries, setMappingEntries] = useState<MappingEntry[]>([]);
@@ -48,10 +52,14 @@ export default function SettingsPanel() {
     result: null,
   });
 
+  // 城市-HOST 映射编辑状态
+  const [newCityName, setNewCityName] = useState('');
+  const [newCityHost, setNewCityHost] = useState('');
+
   useEffect(() => {
     // 加载设置
     fetch('/api/settings').then(r => r.json()).then(res => {
-      if (res.success) setSettings(res.data);
+      if (res.success) setSettings({ ...res.data, cityHostMap: res.data.cityHostMap ?? {} });
     });
     // 加载映射
     fetch('/api/mapping').then(r => r.json()).then(res => {
@@ -69,8 +77,31 @@ export default function SettingsPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: settings }),
     });
+    // 设置保存后刷新全局城市列表
+    await reloadCityMap();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const addCityHost = () => {
+    const name = newCityName.trim();
+    const host = newCityHost.trim();
+    if (!name || !host) return;
+    setSettings(p => ({ ...p, cityHostMap: { ...p.cityHostMap, [name]: host } }));
+    setNewCityName('');
+    setNewCityHost('');
+  };
+
+  const removeCityHost = (cityName: string) => {
+    setSettings(p => {
+      const next = { ...p.cityHostMap };
+      delete next[cityName];
+      return { ...p, cityHostMap: next };
+    });
+  };
+
+  const updateCityHost = (cityName: string, newHost: string) => {
+    setSettings(p => ({ ...p, cityHostMap: { ...p.cityHostMap, [cityName]: newHost } }));
   };
 
   const testDbConnection = async () => {
@@ -194,6 +225,76 @@ export default function SettingsPanel() {
               placeholder="默认: ~/bk_spider_data/采集数据"
             />
           </div>
+        </section>
+
+        {/* 城市-HOST 映射管理 */}
+        <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <h3 className="text-sm font-bold text-gray-800 mb-1">🏙️ 城市 - HOST 映射</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            配置城市名称与贝壳找房域名的对应关系，顶部城市下拉框依据此列表生成。
+            修改后点击"保存设置"生效。
+          </p>
+
+          {/* 新增一行 */}
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              value={newCityName}
+              onChange={e => setNewCityName(e.target.value)}
+              placeholder="城市名称（如：天津市）"
+              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              value={newCityHost}
+              onChange={e => setNewCityHost(e.target.value)}
+              placeholder="HOST URL（如：https://tj.ke.com）"
+              className="flex-[2] px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onKeyDown={e => { if (e.key === 'Enter') addCityHost(); }}
+            />
+            <button
+              onClick={addCityHost}
+              disabled={!newCityName.trim() || !newCityHost.trim()}
+              className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-40 transition-colors whitespace-nowrap"
+            >
+              + 添加
+            </button>
+          </div>
+
+          {/* 映射列表 */}
+          <div className="border border-gray-200 rounded-md overflow-hidden">
+            <div className="grid grid-cols-[120px_1fr_auto] bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
+              <span>城市名称</span>
+              <span>HOST URL</span>
+              <span>操作</span>
+            </div>
+            <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+              {Object.keys(settings.cityHostMap).length === 0 ? (
+                <div className="px-3 py-4 text-center text-xs text-gray-400">暂无配置</div>
+              ) : (
+                Object.entries(settings.cityHostMap)
+                  .sort(([a], [b]) => a.localeCompare(b, 'zh'))
+                  .map(([cityName, hostUrl]) => (
+                    <div key={cityName} className="grid grid-cols-[120px_1fr_auto] items-center px-3 py-1.5 hover:bg-gray-50 gap-2">
+                      <span className="text-sm text-gray-700 font-medium">{cityName}</span>
+                      <input
+                        type="text"
+                        value={hostUrl}
+                        onChange={e => updateCityHost(cityName, e.target.value)}
+                        className="text-xs font-mono text-gray-600 border border-transparent hover:border-gray-200 focus:border-blue-400 rounded px-1.5 py-1 focus:outline-none w-full"
+                      />
+                      <button
+                        onClick={() => removeCityHost(cityName)}
+                        className="text-red-400 hover:text-red-600 text-xs px-2"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">💡 提示：可直接编辑 HOST URL 输入框，修改完成后点击"保存设置"生效</p>
         </section>
 
         {/* 小区映射管理 */}

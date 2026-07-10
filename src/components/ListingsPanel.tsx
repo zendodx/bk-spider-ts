@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCityContext } from '@/lib/CityContext';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Legend,
@@ -1386,6 +1387,7 @@ function ImageModal({ url, title, onClose }: { url: string; title: string; onClo
 }
 
 export default function ListingsPanel() {
+  const { selectedCityFilter } = useCityContext();
   // 筛选条件
   const [community, setCommunity]           = useState('');
   const [crawlDate, setCrawlDate]           = useState(today());
@@ -1445,7 +1447,8 @@ const [showChart, setShowChart] = useState(false);
     const c = community.trim();
     if (!c) { setActiveDates(new Set()); return; }
     let cancelled = false;
-    fetch(`/api/listings/dates?community=${encodeURIComponent(c)}`)
+    const datesCityQ = selectedCityFilter ? `&city=${encodeURIComponent(selectedCityFilter)}` : '';
+    fetch(`/api/listings/dates?community=${encodeURIComponent(c)}${datesCityQ}`)
       .then(r => r.json())
       .then(json => {
         if (!cancelled && json.success) {
@@ -1454,16 +1457,17 @@ const [showChart, setShowChart] = useState(false);
       })
       .catch(() => {/* ignore */});
     return () => { cancelled = true; };
-  }, [community]);
+  }, [community, selectedCityFilter]);
 
   // 防抖查询小区候选
   useEffect(() => {
     const timer = setTimeout(async () => {
       setCommunityLoading(true);
       try {
+        const cityQ = selectedCityFilter ? `&city=${encodeURIComponent(selectedCityFilter)}` : '';
         const url = communityKeyword
-          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30`
-          : `/api/community/search?limit=30`;
+          ? `/api/community/search?keyword=${encodeURIComponent(communityKeyword)}&limit=30${cityQ}`
+          : `/api/community/search?limit=30${cityQ}`;
         const res = await fetch(url);
         const json = await res.json();
         if (json.success) setCommunityOptions(json.data ?? []);
@@ -1512,6 +1516,7 @@ const [showChart, setShowChart] = useState(false);
       });
       if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
       if (houseType) params.set('houseType', houseType);
+      if (selectedCityFilter) params.set('city', selectedCityFilter);
       if (areaEnabled) {
         const mn = parseFloat(areaMin);
         const mx = parseFloat(areaMax);

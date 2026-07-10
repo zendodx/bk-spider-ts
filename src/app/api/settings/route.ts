@@ -25,7 +25,22 @@ interface AppSettings {
   exportCsv: boolean;
   dataDir: string;
   dbPath: string;
+  /** 城市名 -> HOST URL 映射，支持自定义 */
+  cityHostMap: Record<string, string>;
 }
+
+const DEFAULT_CITY_HOST_MAP: Record<string, string> = {
+  '济南市': 'https://jn.ke.com',
+  '北京市': 'https://bj.ke.com',
+  '上海市': 'https://sh.ke.com',
+  '广州市': 'https://gz.ke.com',
+  '深圳市': 'https://sz.ke.com',
+  '成都市': 'https://cd.ke.com',
+  '杭州市': 'https://hz.ke.com',
+  '南京市': 'https://nj.ke.com',
+  '武汉市': 'https://wh.ke.com',
+  '西安市': 'https://xa.ke.com',
+};
 
 const DEFAULT_SETTINGS: AppSettings = {
   host: 'https://jn.ke.com',
@@ -41,6 +56,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   exportCsv: true,
   dataDir: path.join(os.homedir(), 'bk_spider_data', '采集数据'),
   dbPath: path.join(os.homedir(), 'bk_spider_data', 'bk_spider.db'),
+  cityHostMap: DEFAULT_CITY_HOST_MAP,
 };
 
 export async function GET() {
