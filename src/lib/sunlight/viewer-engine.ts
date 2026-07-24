@@ -794,6 +794,8 @@ export function createSunlightScene(container: HTMLDivElement): SunlightSceneHan
   gridHelper.position.y = 0.02;
   scene.add(gridHelper);
 
+  scene.add(createCompass());
+
   const buildingsGroup = new THREE.Group();
   scene.add(buildingsGroup);
 
@@ -829,6 +831,108 @@ export function createSunlightScene(container: HTMLDivElement): SunlightSceneHan
   }
 
   return { scene, camera, renderer, controls, buildingsGroup, heatmapGroup, sunLight, requestRender, dispose };
+}
+
+/**
+ * 创建罗盘指南针（迁移自 building-sunlight-simulator/js/viewer.js 的 createCompass）。
+ * 场景中的楼栋数据在加载前已按 northAngle 预先旋转对齐到世界坐标系的正北方向（Z 轴负方向），
+ * 因此指南针本身固定朝向、固定位置放置即可，作为方位参考物。
+ */
+function createCompass(): THREE.Group {
+  const compassGroup = new THREE.Group();
+
+  // 罗盘底座 - 圆形平台
+  const baseGeometry = new THREE.CylinderGeometry(20, 20, 0.5, 32);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.25;
+  compassGroup.add(base);
+
+  // 罗盘刻度盘（用 canvas 绘制纹理）
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#f8f9fa';
+  ctx.beginPath();
+  ctx.arc(256, 256, 256, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#2c3e50';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(256, 256, 250, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const directions = [
+    { angle: 0, label: 'N', color: '#e74c3c', size: 48 },
+    { angle: 90, label: 'E', color: '#34495e', size: 36 },
+    { angle: 180, label: 'S', color: '#34495e', size: 36 },
+    { angle: 270, label: 'W', color: '#34495e', size: 36 },
+  ];
+
+  for (let i = 0; i < 360; i += 10) {
+    const angle = ((i - 90) * Math.PI) / 180;
+    const isMain = i % 30 === 0;
+    const length = isMain ? 30 : 15;
+    const width = isMain ? 3 : 1;
+
+    const x1 = 256 + Math.cos(angle) * 220;
+    const y1 = 256 + Math.sin(angle) * 220;
+    const x2 = 256 + Math.cos(angle) * (220 - length);
+    const y2 = 256 + Math.sin(angle) * (220 - length);
+
+    ctx.strokeStyle = '#34495e';
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  directions.forEach(dir => {
+    const angle = ((dir.angle - 90) * Math.PI) / 180;
+    const x = 256 + Math.cos(angle) * 170;
+    const y = 256 + Math.sin(angle) * 170;
+
+    ctx.fillStyle = dir.color;
+    ctx.font = `bold ${dir.size}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dir.label, x, y);
+  });
+
+  ctx.fillStyle = '#34495e';
+  ctx.beginPath();
+  ctx.arc(256, 256, 15, 0, Math.PI * 2);
+  ctx.fill();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const discGeometry = new THREE.CircleGeometry(19.5, 64);
+  const discMaterial = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4, metalness: 0.1 });
+  const disc = new THREE.Mesh(discGeometry, discMaterial);
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = 0.6;
+  compassGroup.add(disc);
+
+  // 指北针 - 红色箭头
+  const arrowShape = new THREE.Shape();
+  arrowShape.moveTo(0, 12);
+  arrowShape.lineTo(-2, 0);
+  arrowShape.lineTo(0, -1);
+  arrowShape.lineTo(2, 0);
+  arrowShape.closePath();
+
+  const arrowGeometry = new THREE.ExtrudeGeometry(arrowShape, { depth: 1, bevelEnabled: false });
+  const arrowMaterial = new THREE.MeshStandardMaterial({ color: 0xe74c3c, roughness: 0.3, metalness: 0.2 });
+  const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+  arrow.rotation.x = -Math.PI / 2;
+  arrow.position.y = 1.2;
+  compassGroup.add(arrow);
+
+  compassGroup.position.set(0, 0.5, 180);
+  return compassGroup;
 }
 
 const roofMaterial = new THREE.MeshStandardMaterial({ color: SUNLIGHT_CONFIG.MATERIALS.ROOF_COLOR, roughness: 0.9, metalness: 0.0 });
