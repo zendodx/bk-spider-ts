@@ -27,6 +27,55 @@ import { createEditingBuildingId, type EditingBuilding } from '@/lib/sunlight/ed
 
 type DrawMode = 'idle' | 'scaling' | 'drawing';
 
+/**
+ * 将后端返回的英文校验错误（如 "buildings[0].shape area is too small"）
+ * 转换为对用户更友好的中文提示，便于定位是哪栋楼、哪个字段出了问题。
+ */
+function translateValidationError(raw: string): string {
+  const match = raw.match(/^buildings\[(\d+)\](.*)$/);
+  const prefix = match ? `第 ${Number(match[1]) + 1} 栋楼` : '';
+  const rest = match ? match[2].replace(/^\./, '') : raw;
+
+  const rules: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
+    [/^shape area is too small$/, () => '轮廓面积过小，请检查绘制的多边形是否过小或点位重叠'],
+    [/^shape must not self-intersect$/, () => '轮廓存在自相交，请检查绘制的多边形边线是否交叉'],
+    [/^shape contains a zero-length edge$/, () => '轮廓存在重复点（零长度边），请检查相邻两点是否重合'],
+    [/^shape must be an array$/, () => '缺少轮廓数据，请重新绘制楼栋轮廓'],
+    [/^shape must contain between (\d+) and (\d+) points$/, m => `轮廓点数需在 ${m[1]}~${m[2]} 个之间，请检查绘制的多边形`],
+    [/^shape\[(\d+)\] must contain finite x and y values$/, m => `轮廓第 ${Number(m[1]) + 1} 个点坐标无效`],
+    [/^floors must be an integer$/, () => '楼层数必须为整数'],
+    [/^floors must be between (\d+) and (\d+)$/, m => `楼层数需在 ${m[1]}~${m[2]} 之间`],
+    [/^floorHeight must be between (\S+) and (\S+)$/, m => `层高需在 ${m[1]}~${m[2]} 米之间`],
+    [/^units must be an integer$/, () => '每层单元数必须为整数'],
+    [/^units must be between (\d+) and (\d+)$/, m => `每层单元数需在 ${m[1]}~${m[2]} 之间`],
+    [/^totalHeight must equal floors \* floorHeight$/, () => '总高度与「楼层数×层高」不一致'],
+    [/^isThisCommunity must be a boolean$/, () => '「是否本小区」字段格式错误'],
+    [/^center must contain finite x and y values$/, () => '楼栋中心点坐标无效'],
+    [/^unitsPerFloor is invalid$/, () => '各层单元数配置无效'],
+    [/^unitRatiosPerFloor.*$/, () => '户型占比配置无效'],
+    [/^must be an object$/, () => '楼栋数据格式错误'],
+  ];
+
+  for (const [pattern, formatter] of rules) {
+    const m = rest.match(pattern);
+    if (m) return prefix ? `${prefix}：${formatter(m)}` : formatter(m);
+  }
+
+  // 通用兜底翻译
+  const generic = rest
+    .replace(/^latitude/, '纬度')
+    .replace(/^longitude/, '经度')
+    .replace(/^northAngle/, '朝北角度')
+    .replace(/^scaleRatio/, '比例尺')
+    .replace(/^timeZone must be a valid IANA time zone$/, '时区不合法，请输入合法的 IANA 时区（如 Asia/Shanghai）')
+    .replace(/^buildings must be an array$/, '楼栋数据格式错误')
+    .replace(/^buildings must contain between (\d+) and (\d+) items$/, '楼栋数量超出允许范围')
+    .replace(/must be a finite number$/, '必须为有效数字')
+    .replace(/must be between/, '需介于');
+
+  return prefix ? `${prefix}：${generic}` : generic;
+}
+
 interface SunlightEditorPanelProps {
   communityUrl: string;
   community: string;
@@ -533,27 +582,29 @@ export default function SunlightEditorPanel({
   );
 
   // ── 鼠标事件 ───────────────────────────────────────────────────
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!isImageLoaded) return;
-    e.preventDefault();
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
-    const zoomSpeed = 0.1;
-    const delta = e.deltaY > 0 ? 1 - zoomSpeed : 1 + zoomSpeed;
-    const { scale: oldScale, x: viewX, y: viewY } = viewRef.current;
-    const newScale = Math.min(Math.max(oldScale * delta, 0.1), 10);
-    const rect = wrapper.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const offsetX = mouseX - viewX;
-    const offsetY = mouseY - viewY;
-    viewRef.current = {
-      scale: newScale,
-      x: mouseX - offsetX * (newScale / oldScale),
-      y: mouseY - offsetY * (newScale / oldScale),
-    };
-    updateTransform();
-  }, [isImageLoaded, updateTransform]);
+  /** 通过滑动条缩放，以可视区域中心为缩放原点 */
+  const zoomTo = useCallback(
+    (newScale: number) => {
+      if (!isImageLoaded) return;
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
+      const oldScale = viewRef.current.scale;
+      if (oldScale === newScale) return;
+      // 以容器中心为缩放锚点
+      const cx = wrapper.clientWidth / 2;
+      const cy = wrapper.clientHeight / 2;
+      const { x: viewX, y: viewY } = viewRef.current;
+      const offsetX = cx - viewX;
+      const offsetY = cy - viewY;
+      viewRef.current = {
+        scale: newScale,
+        x: cx - offsetX * (newScale / oldScale),
+        y: cy - offsetY * (newScale / oldScale),
+      };
+      updateTransform();
+    },
+    [isImageLoaded, updateTransform]
+  );
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -783,7 +834,10 @@ export default function SunlightEditorPanel({
       const res = await fetch('/api/sunlight/plan', { method: 'POST', body: formData });
       const json = await res.json();
       if (!json.success) {
-        setSaveError(json.error || '保存失败');
+        const baseError = json.error || '保存失败';
+        const details: string[] = Array.isArray(json.details) ? json.details : [];
+        const translated = details.map(translateValidationError);
+        setSaveError(translated.length > 0 ? `${baseError}：\n${translated.map(t => `· ${t}`).join('\n')}` : baseError);
         return;
       }
       setSaveSuccess(true);
@@ -804,7 +858,7 @@ export default function SunlightEditorPanel({
         ref={wrapperRef}
         className="relative flex-1 overflow-hidden bg-gray-100"
         style={{ cursor: mode === 'drawing' || mode === 'scaling' ? 'crosshair' : 'grab' }}
-        onWheel={handleWheel}
+        onWheel={e => e.preventDefault()}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -830,8 +884,32 @@ export default function SunlightEditorPanel({
           style={{ display: isImageLoaded ? 'block' : 'none', transformOrigin: '0 0', position: 'absolute' }}
         />
         {isImageLoaded && (
-          <div className="absolute bottom-2 left-2 bg-white/90 text-xs px-2 py-1 rounded shadow">
-            缩放: {Math.round(viewRef.current.scale * 100)}%
+          <div
+            className="absolute bottom-0 left-0 right-0 flex items-center gap-2 bg-white/90 px-4 py-2 shadow-[0_-1px_4px_rgba(0,0,0,0.08)]"
+            style={{ cursor: 'default' }}
+            onMouseDown={e => e.stopPropagation()}
+            onMouseMove={e => e.stopPropagation()}
+            onMouseUp={e => e.stopPropagation()}
+            onDoubleClick={e => e.stopPropagation()}
+            onWheel={e => e.stopPropagation()}
+          >
+            <span className="text-xs text-gray-500 w-10 text-right shrink-0">缩小</span>
+            <input
+              type="range"
+              min={10}
+              max={500}
+              step={1}
+              value={Math.round(viewRef.current.scale * 100)}
+              onChange={e => {
+                const pct = Number(e.target.value);
+                zoomTo(Math.max(pct / 100, 0.1));
+              }}
+              className="flex-1 h-1.5 accent-blue-500 cursor-pointer"
+            />
+            <span className="text-xs text-gray-500 w-10 shrink-0">放大</span>
+            <span className="text-xs text-gray-700 font-mono w-14 text-right shrink-0">
+              {Math.round(viewRef.current.scale * 100)}%
+            </span>
           </div>
         )}
       </div>
@@ -891,7 +969,7 @@ export default function SunlightEditorPanel({
         {/* 3. 绘制楼栋 */}
         <div>
           <label className="block font-semibold text-gray-700 mb-1.5">3. 绘制楼栋</label>
-          <p className="text-xs text-green-600 mb-1">🖱️ 滚轮缩放，按住中键或空格拖拽视图</p>
+          <p className="text-xs text-green-600 mb-1">⬇️ 底部滑动条控制缩放，按住中键或空格拖拽视图</p>
           <p className="text-xs text-gray-400 mb-2">操作: 左键加点，双击结束；右键撤销上个点。</p>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -1147,7 +1225,11 @@ export default function SunlightEditorPanel({
 
         {/* 保存 */}
         <div className="pt-2 border-t">
-          {saveError && <div className="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{saveError}</div>}
+          {saveError && (
+            <div className="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+              {saveError}
+            </div>
+          )}
           {saveSuccess && (
             <div className="mb-2 text-xs text-green-600 bg-green-50 border border-green-200 rounded px-2 py-1.5">
               ✓ 保存成功，可切换到「3D 分析」查看效果
