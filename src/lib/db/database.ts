@@ -111,6 +111,8 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_build_year         ON house_listings (build_year);
     CREATE INDEX IF NOT EXISTS idx_province_city      ON house_listings (province, city, district);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_detail_url_crawl_time ON house_listings (detail_url, crawl_time);
+    -- 供 /api/community/stats 小区聚合查询使用：WHERE is_deleted=0 GROUP BY community
+    CREATE INDEX IF NOT EXISTS idx_deleted_community  ON house_listings (is_deleted, community);
   `);
 
   // Cookie 存储表

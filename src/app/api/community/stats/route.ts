@@ -108,6 +108,11 @@ export async function GET(request: NextRequest) {
     const pairParams: string[] = [];
     communities.forEach(c => { pairParams.push(c.community, c.latest_date); });
 
+    // 注意：中位数计算不要使用「相关子查询 + 窗口函数 CTE」的写法——
+    // SQLite 不会物化非递归 CTE，相关子查询会导致 ranked 的窗口函数对每个外层分组行
+    // 都重新计算一遍（本质 O(小区数 × 全表)），658 个小区实测耗时 8s+。
+    // 改为：先用窗口函数一次性筛出每个小区中位数所在的 1~2 行（ranked_filtered），
+    // 再单独一次 GROUP BY 求平均，整体只需一次窗口计算 + 两次线性聚合。
     const latestStatsSql = `
       WITH latest_pairs(community, latest_date) AS (
         VALUES ${placeholders}
@@ -131,11 +136,20 @@ export async function GET(request: NextRequest) {
         SELECT
           community,
           unit_price,
-          total_price,
           ROW_NUMBER() OVER (PARTITION BY community ORDER BY unit_price) AS rn,
           COUNT(*) OVER (PARTITION BY community) AS cnt
         FROM latest_listings
         WHERE unit_price IS NOT NULL AND unit_price > 0
+      ),
+      median_rows AS (
+        SELECT community, unit_price
+        FROM ranked
+        WHERE rn IN (CAST((cnt + 1) / 2 AS INTEGER), CAST((cnt + 2) / 2 AS INTEGER))
+      ),
+      medians AS (
+        SELECT community, ROUND(AVG(unit_price), 4) AS median_unit_price
+        FROM median_rows
+        GROUP BY community
       )
       SELECT
         ll.community,
@@ -146,16 +160,9 @@ export async function GET(request: NextRequest) {
         ROUND(AVG(ll.total_price), 2)    AS avg_total_price,
         ROUND(MIN(ll.total_price), 2)    AS min_total_price,
         ROUND(MAX(ll.total_price), 2)    AS max_total_price,
-        (
-          SELECT ROUND(AVG(unit_price), 4)
-          FROM ranked r2
-          WHERE r2.community = ll.community
-            AND r2.rn IN (
-              CAST((r2.cnt + 1) / 2 AS INTEGER),
-              CAST((r2.cnt + 2) / 2 AS INTEGER)
-            )
-        ) AS median_unit_price
+        m.median_unit_price              AS median_unit_price
       FROM latest_listings ll
+      LEFT JOIN medians m ON m.community = ll.community
       GROUP BY ll.community
     `;
 
