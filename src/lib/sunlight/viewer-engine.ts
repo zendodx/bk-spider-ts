@@ -742,6 +742,7 @@ export interface SunlightSceneHandles {
   renderer: THREE.WebGLRenderer;
   controls: OrbitControls;
   buildingsGroup: THREE.Group;
+  heatmapGroup: THREE.Group;
   sunLight: THREE.DirectionalLight;
   requestRender: (updateShadows?: boolean) => void;
   dispose: () => void;
@@ -796,6 +797,10 @@ export function createSunlightScene(container: HTMLDivElement): SunlightSceneHan
   const buildingsGroup = new THREE.Group();
   scene.add(buildingsGroup);
 
+  const heatmapGroup = new THREE.Group();
+  heatmapGroup.visible = false;
+  scene.add(heatmapGroup);
+
   const sunLight = new THREE.DirectionalLight(0xffffff, SUNLIGHT_CONFIG.LIGHTING.SUN_INTENSITY);
   sunLight.castShadow = true;
   const shadowMapSize = Math.min(SUNLIGHT_CONFIG.LIGHTING.SHADOW_MAP_SIZE, renderer.capabilities.maxTextureSize || SUNLIGHT_CONFIG.LIGHTING.SHADOW_MAP_SIZE);
@@ -817,12 +822,13 @@ export function createSunlightScene(container: HTMLDivElement): SunlightSceneHan
   function dispose() {
     controls.dispose();
     renderer.dispose();
+    disposeHeatmapLayer(heatmapGroup);
     if (renderer.domElement.parentElement === container) {
       container.removeChild(renderer.domElement);
     }
   }
 
-  return { scene, camera, renderer, controls, buildingsGroup, sunLight, requestRender, dispose };
+  return { scene, camera, renderer, controls, buildingsGroup, heatmapGroup, sunLight, requestRender, dispose };
 }
 
 const roofMaterial = new THREE.MeshStandardMaterial({ color: SUNLIGHT_CONFIG.MATERIALS.ROOF_COLOR, roughness: 0.9, metalness: 0.0 });
@@ -986,4 +992,247 @@ export function updateSunLight(
 
 export function createPlanFingerprint(data: BuildingPlanData): string {
   return createFingerprint({ buildings: data.buildings });
+}
+
+// ─── 采光热力图 ──────────────────────────────────────────────────
+// 迁移自 building-sunlight-simulator/js/viewer.js 的 createHeatmapLayer / onCanvasClick /
+// onCanvasMouseMove / filterHeatHitsByOcclusion 等逻辑。
+
+const HEATMAP_BASE_OPACITY = 0.85;
+const HEATMAP_HOVER_LIGHTEN = 0.18;
+const HEATMAP_SELECTED_LIGHTEN = 0.34;
+/** 允许的遮挡命中容差（米）：热力格本身沿外法线偏移 0.3 米，需要一定余量避免误判为被遮挡 */
+const HEATMAP_OCCLUSION_EPS = 0.8;
+
+export interface HeatmapCellUserData {
+  apartmentKey: string;
+  buildingIndex: number;
+  buildingName: string;
+  floor: number;
+  unit: number;
+  sunlightHours: number;
+  unitMaxHours: number;
+}
+
+interface HeatmapCellDescriptor {
+  mesh: THREE.InstancedMesh;
+  instanceId: number;
+  userData: HeatmapCellUserData;
+  baseColor: THREE.Color;
+  cellWidth: number;
+}
+
+/** 热力图交互状态与查表结构，建议由调用方以 useRef 持有，跨渲染帧复用 */
+export interface HeatmapState {
+  instanceData: HeatmapCellDescriptor[];
+  cellsByApartmentKey: Map<string, HeatmapCellDescriptor[]>;
+  resultsSource: SunlightComputationResult | null;
+  hoveredApartmentKey: string | null;
+  selectedApartmentKey: string | null;
+  occluderMeshes: THREE.Mesh[];
+}
+
+export function createHeatmapState(): HeatmapState {
+  return {
+    instanceData: [],
+    cellsByApartmentKey: new Map(),
+    resultsSource: null,
+    hoveredApartmentKey: null,
+    selectedApartmentKey: null,
+    occluderMeshes: [],
+  };
+}
+
+export function makeApartmentKey(buildingIndex: number, floor: number, unit: number): string {
+  return `${buildingIndex}::${floor}::${unit}`;
+}
+
+/** 建筑场景重建后需要调用，刷新用于热力图射线遮挡判断的实体楼栋网格缓存 */
+export function refreshHeatmapOccluderMeshes(state: HeatmapState, buildingsGroup: THREE.Group): void {
+  state.occluderMeshes = collectBuildingMeshes(buildingsGroup);
+}
+
+function disposeHeatmapLayer(heatmapGroup: THREE.Group): void {
+  heatmapGroup.children.forEach(child => {
+    const mesh = child as THREE.InstancedMesh;
+    mesh.geometry?.dispose();
+    const material = mesh.material;
+    if (Array.isArray(material)) material.forEach(m => m.dispose());
+    else material?.dispose();
+  });
+  while (heatmapGroup.children.length > 0) heatmapGroup.remove(heatmapGroup.children[0]);
+}
+
+/**
+ * 依据分析结果构建热力图图层（InstancedMesh，每个实例对应一个外墙采样片段）。
+ * 仅在分析结果变化时需要重新调用；开关显隐请直接切换 `heatmapGroup.visible`。
+ */
+export function createHeatmapLayer(heatmapGroup: THREE.Group, state: HeatmapState, results: SunlightComputationResult): void {
+  disposeHeatmapLayer(heatmapGroup);
+  state.instanceData = [];
+  state.cellsByApartmentKey = new Map();
+  state.resultsSource = results;
+  state.hoveredApartmentKey = null;
+  state.selectedApartmentKey = null;
+
+  const points = results.points;
+  if (!points || points.length === 0) return;
+
+  const maxHours = SUNLIGHT_CONFIG.SUNLIGHT_ANALYSIS.MAX_HOURS;
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: HEATMAP_BASE_OPACITY,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, points.length);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const matrix = new THREE.Matrix4();
+  const up = new THREE.Vector3(0, 1, 0);
+
+  points.forEach((point, instanceId) => {
+    const floorHeight = 3; // 各点已含世界坐标，层高仅用于格高估算，采用统一近似值
+    const cellHeight = floorHeight * 0.9;
+    const cellWidth = Math.max(0.06, Number(point.cellWidth) || 0.6);
+    const hours = point.sunlightHours || 0;
+    const color = getSunlightColor(hours, maxHours);
+    const normalX = point.outward?.x || 0;
+    const normalZ = point.outward?.y || 0;
+    const offset = 0.3;
+
+    position.set(point.wallDataX + normalX * offset, point.z, point.wallDataY + normalZ * offset);
+    const normal = new THREE.Vector3(normalX, 0, normalZ);
+    if (normal.lengthSq() < 1e-9) normal.set(0, 0, 1);
+    normal.normalize();
+    const lookTarget = position.clone().add(normal);
+    const lookMatrix = new THREE.Matrix4().lookAt(position, lookTarget, up);
+    quaternion.setFromRotationMatrix(lookMatrix);
+    scale.set(cellWidth, cellHeight, 1);
+    matrix.compose(position, quaternion, scale);
+    mesh.setMatrixAt(instanceId, matrix);
+    mesh.setColorAt(instanceId, color);
+
+    const apartmentKey = makeApartmentKey(point.buildingIndex, point.floor, point.unit);
+    const descriptor: HeatmapCellDescriptor = {
+      mesh,
+      instanceId,
+      userData: {
+        apartmentKey,
+        buildingIndex: point.buildingIndex,
+        buildingName: point.buildingName,
+        floor: point.floor,
+        unit: point.unit,
+        sunlightHours: hours,
+        unitMaxHours: point.unitMaxHours ?? hours,
+      },
+      baseColor: color.clone(),
+      cellWidth,
+    };
+    state.instanceData[instanceId] = descriptor;
+    const list = state.cellsByApartmentKey.get(apartmentKey);
+    if (list) list.push(descriptor);
+    else state.cellsByApartmentKey.set(apartmentKey, [descriptor]);
+  });
+
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  heatmapGroup.add(mesh);
+}
+
+function applyHeatmapCellVisual(cell: HeatmapCellDescriptor, options: { selected?: boolean; hovered?: boolean } = {}): void {
+  const targetColor = cell.baseColor.clone();
+  const lighten = options.selected ? HEATMAP_SELECTED_LIGHTEN : options.hovered ? HEATMAP_HOVER_LIGHTEN : 0;
+  if (lighten > 0) targetColor.lerp(new THREE.Color(1, 1, 1), lighten);
+  cell.mesh.setColorAt(cell.instanceId, targetColor);
+  if (cell.mesh.instanceColor) cell.mesh.instanceColor.needsUpdate = true;
+}
+
+function updateApartmentHighlight(state: HeatmapState, apartmentKey: string | null): void {
+  if (!apartmentKey) return;
+  const cells = state.cellsByApartmentKey.get(apartmentKey);
+  if (!cells) return;
+  const isSelected = apartmentKey === state.selectedApartmentKey;
+  const isHovered = apartmentKey === state.hoveredApartmentKey;
+  cells.forEach(cell => applyHeatmapCellVisual(cell, { selected: isSelected, hovered: isHovered }));
+}
+
+/** 过滤掉被真实建筑物遮挡、事实上不可见的热力格命中（射线穿透楼体从背面命中的情况） */
+function filterHeatHitsByOcclusion(
+  raycaster: THREE.Raycaster,
+  heatHits: THREE.Intersection[],
+  occluderMeshes: THREE.Mesh[]
+): THREE.Intersection[] {
+  if (!heatHits || heatHits.length === 0) return [];
+  if (!occluderMeshes || occluderMeshes.length === 0) return heatHits;
+
+  const buildingHits = raycaster.intersectObjects(occluderMeshes, true);
+  const nearestBuildingHit = buildingHits.find(hit => hit && hit.distance > 1e-6);
+  if (!nearestBuildingHit) return heatHits;
+
+  const maxAcceptedDistance = nearestBuildingHit.distance + HEATMAP_OCCLUSION_EPS;
+  return heatHits.filter(hit => hit && hit.distance <= maxAcceptedDistance);
+}
+
+export interface HeatmapPickResult {
+  apartmentKey: string;
+  userData: HeatmapCellUserData;
+}
+
+/**
+ * 依据屏幕坐标（NDC，[-1,1]）在热力图层上做拾取，返回命中的户信息（若有）。
+ * 用于 click / mousemove 事件处理。
+ */
+export function pickHeatmapApartment(
+  ndcX: number,
+  ndcY: number,
+  camera: THREE.Camera,
+  heatmapGroup: THREE.Group,
+  state: HeatmapState,
+  raycaster: THREE.Raycaster
+): HeatmapPickResult | null {
+  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+  const intersects = raycaster.intersectObjects(heatmapGroup.children, false);
+  const heatHits = filterHeatHitsByOcclusion(raycaster, intersects, state.occluderMeshes);
+  const hit = heatHits.find(h => Number.isInteger(h.instanceId));
+  if (!hit || !Number.isInteger(hit.instanceId)) return null;
+  const descriptor = state.instanceData[hit.instanceId as number];
+  if (!descriptor) return null;
+  return { apartmentKey: descriptor.userData.apartmentKey, userData: descriptor.userData };
+}
+
+/** 设置当前悬浮的户，更新高亮着色；传 null 清除悬浮态 */
+export function setHeatmapHover(state: HeatmapState, apartmentKey: string | null): void {
+  if (state.hoveredApartmentKey === apartmentKey) return;
+  const prev = state.hoveredApartmentKey;
+  state.hoveredApartmentKey = apartmentKey;
+  if (prev) updateApartmentHighlight(state, prev);
+  if (apartmentKey) updateApartmentHighlight(state, apartmentKey);
+}
+
+/** 设置当前选中的户，更新高亮着色；传 null 清除选中态 */
+export function setHeatmapSelection(state: HeatmapState, apartmentKey: string | null): void {
+  if (state.selectedApartmentKey === apartmentKey) return;
+  const prev = state.selectedApartmentKey;
+  state.selectedApartmentKey = apartmentKey;
+  if (prev) updateApartmentHighlight(state, prev);
+  if (apartmentKey) updateApartmentHighlight(state, apartmentKey);
+}
+
+/** 清空热力图交互状态（关闭热力图或场景卸载时调用） */
+export function clearHeatmapInteractionState(state: HeatmapState): void {
+  const prevHover = state.hoveredApartmentKey;
+  const prevSelected = state.selectedApartmentKey;
+  state.hoveredApartmentKey = null;
+  state.selectedApartmentKey = null;
+  if (prevHover) updateApartmentHighlight(state, prevHover);
+  if (prevSelected) updateApartmentHighlight(state, prevSelected);
 }

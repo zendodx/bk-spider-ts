@@ -8,18 +8,28 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
 import type { BuildingPlanData } from '@/types/sunlight';
 import { SUNLIGHT_CONFIG } from '@/lib/sunlight/config';
 import { calculateSolarDeclination, calculateSolarTimeOffset, getSeasonPresetDate, type SeasonPreset } from '@/lib/sunlight/solar-time';
 import { formatTime, roundTo } from '@/lib/sunlight/utils';
 import {
+  clearHeatmapInteractionState,
   collectBuildingMeshes,
+  createHeatmapLayer,
+  createHeatmapState,
   createPlanFingerprint,
   createSunlightScene,
   fitViewToBuildings,
   loadBuildingsIntoScene,
+  pickHeatmapApartment,
+  refreshHeatmapOccluderMeshes,
   runSunlightAnalysis,
+  setHeatmapHover,
+  setHeatmapSelection,
   updateSunLight,
+  type HeatmapCellUserData,
+  type HeatmapState,
   type SunlightComputationResult,
   type SunlightSceneHandles,
 } from '@/lib/sunlight/viewer-engine';
@@ -43,6 +53,8 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<SunlightSceneHandles | null>(null);
   const analysisResultRef = useRef<SunlightComputationResult | null>(null);
+  const heatmapStateRef = useRef<HeatmapState>(createHeatmapState());
+  const raycasterRef = useRef(new THREE.Raycaster());
 
   const [hour, setHour] = useState(12);
   const [seasonPreset, setSeasonPreset] = useState<SeasonPreset | 'custom'>('december-solstice');
@@ -56,6 +68,11 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
   const [analysisSummary, setAnalysisSummary] = useState<SunlightComputationResult | null>(null);
   const [savingCache, setSavingCache] = useState(false);
   const [sunAltitudeDeg, setSunAltitudeDeg] = useState(0);
+
+  // ── 热力图与点击信息面板 ─────────────────────────────────────────
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapReady, setHeatmapReady] = useState(false);
+  const [selectedUnit, setSelectedUnit] = useState<HeatmapCellUserData | null>(null);
 
   const analysisDate = useMemo(() => (seasonPreset === 'custom' ? customDate : getSeasonPresetDate(seasonPreset) || customDate), [seasonPreset, customDate]);
 
@@ -105,6 +122,14 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     if (!handles) return;
     loadBuildingsIntoScene(handles.buildingsGroup, planData);
     fitViewToBuildings(handles);
+    // 楼栋几何体重建后，热力图射线遮挡判断所依赖的实体网格缓存需要同步刷新
+    refreshHeatmapOccluderMeshes(heatmapStateRef.current, handles.buildingsGroup);
+    // 楼栋数据变化后旧的热力图/选中状态不再有效
+    clearHeatmapInteractionState(heatmapStateRef.current);
+    handles.heatmapGroup.visible = false;
+    setShowHeatmap(false);
+    setHeatmapReady(false);
+    setSelectedUnit(null);
   }, [planData]);
 
   // ── 可见性过滤（仅本小区） ─────────────────────────────────────
@@ -161,12 +186,84 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
       });
       analysisResultRef.current = result;
       setAnalysisSummary(result);
+
+      // 分析完成后自动构建并显示热力图（迁移自原版 presentSunlightResults 的行为）
+      createHeatmapLayer(handles.heatmapGroup, heatmapStateRef.current, result);
+      handles.heatmapGroup.visible = true;
+      setShowHeatmap(true);
+      setHeatmapReady(true);
+      setSelectedUnit(null);
+      handles.requestRender(true);
     } catch (e) {
       setAnalysisError(e instanceof Error ? e.message : String(e));
     } finally {
       setAnalyzing(false);
     }
   }, [planData, referenceHours, solarSettings]);
+
+  // ── 热力图显隐开关 ─────────────────────────────────────────────
+  const toggleHeatmap = useCallback((show: boolean) => {
+    const handles = sceneRef.current;
+    if (!handles) return;
+    setShowHeatmap(show);
+    handles.heatmapGroup.visible = show;
+    if (!show) {
+      clearHeatmapInteractionState(heatmapStateRef.current);
+      setSelectedUnit(null);
+      handles.renderer.domElement.style.cursor = '';
+    }
+    handles.requestRender(true);
+  }, []);
+
+  // ── 画布指针坐标 → NDC ────────────────────────────────────────
+  const getNdcFromEvent = useCallback((e: React.MouseEvent<HTMLDivElement>): { x: number; y: number } | null => {
+    const container = containerRef.current;
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      y: -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    };
+  }, []);
+
+  // ── 悬浮：高亮 + 光标反馈 ─────────────────────────────────────
+  const handleCanvasMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const handles = sceneRef.current;
+      if (!handles || !showHeatmap || !heatmapReady) return;
+      const ndc = getNdcFromEvent(e);
+      if (!ndc) return;
+      const pick = pickHeatmapApartment(ndc.x, ndc.y, handles.camera, handles.heatmapGroup, heatmapStateRef.current, raycasterRef.current);
+      setHeatmapHover(heatmapStateRef.current, pick?.apartmentKey ?? null);
+      handles.renderer.domElement.style.cursor = pick ? 'pointer' : '';
+      handles.requestRender(true);
+    },
+    [showHeatmap, heatmapReady, getNdcFromEvent]
+  );
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    const handles = sceneRef.current;
+    if (!handles) return;
+    setHeatmapHover(heatmapStateRef.current, null);
+    handles.renderer.domElement.style.cursor = '';
+    handles.requestRender(true);
+  }, []);
+
+  // ── 点击：选中并展示户型信息面板 ─────────────────────────────
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const handles = sceneRef.current;
+      if (!handles || !showHeatmap || !heatmapReady) return;
+      const ndc = getNdcFromEvent(e);
+      if (!ndc) return;
+      const pick = pickHeatmapApartment(ndc.x, ndc.y, handles.camera, handles.heatmapGroup, heatmapStateRef.current, raycasterRef.current);
+      setHeatmapSelection(heatmapStateRef.current, pick?.apartmentKey ?? null);
+      setSelectedUnit(pick?.userData ?? null);
+      handles.requestRender(true);
+    },
+    [showHeatmap, heatmapReady, getNdcFromEvent]
+  );
 
   // ── 保存分析结果到数据库 ───────────────────────────────────────
   const saveAnalysisResult = useCallback(async () => {
@@ -225,7 +322,94 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     <div className="flex h-full">
       {/* 左侧 3D 视口 */}
       <div className="relative flex-1 bg-gray-100">
-        <div ref={containerRef} className="absolute inset-0" />
+        <div
+          ref={containerRef}
+          className="absolute inset-0"
+          onClick={handleCanvasClick}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseLeave={handleCanvasMouseLeave}
+        />
+
+        {/* 热力图图例 + 开关 */}
+        {heatmapReady && (
+          <div className="absolute top-3 left-3 bg-white/95 shadow-lg rounded-lg px-3 py-2.5 text-xs w-52">
+            <label className="flex items-center gap-1.5 font-medium text-gray-700 cursor-pointer select-none">
+              <input type="checkbox" checked={showHeatmap} onChange={e => toggleHeatmap(e.target.checked)} />
+              显示日照热力图
+            </label>
+            {showHeatmap && (
+              <div className="mt-2">
+                <div
+                  className="h-2.5 rounded"
+                  style={{ background: 'linear-gradient(to right, #fffacd, #ffefaa, #ffdf82, #ffc85a, #ffaa3c, #f58c28, #dc6414)' }}
+                />
+                <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                  <span>0h</span>
+                  <span>4h</span>
+                  <span>{SUNLIGHT_CONFIG.SUNLIGHT_ANALYSIS.MAX_HOURS}h+</span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5">点击墙面色块查看该户日照详情</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 点击后的户型采光信息面板 */}
+        {selectedUnit && (
+          <div className="absolute top-3 right-3 bg-white shadow-lg rounded-lg w-60 text-xs overflow-hidden">
+            <div className="flex items-center justify-between bg-gray-50 px-3 py-2 border-b">
+              <span className="font-semibold text-gray-700">{selectedUnit.buildingName}</span>
+              <button
+                onClick={() => {
+                  setHeatmapSelection(heatmapStateRef.current, null);
+                  setSelectedUnit(null);
+                  sceneRef.current?.requestRender(true);
+                }}
+                className="text-gray-400 hover:text-gray-600 text-sm leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-3 space-y-1.5">
+              <div className="flex justify-between text-gray-600">
+                <span>楼层</span>
+                <span>{selectedUnit.floor} 层</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>户号</span>
+                <span>第 {selectedUnit.unit} 户</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>该点日照时长</span>
+                <span>{roundTo(selectedUnit.sunlightHours, 2)}h</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>该户最大时长</span>
+                <span>{roundTo(selectedUnit.unitMaxHours, 2)}h</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t mt-1.5">
+                <span className="text-gray-600">达标状态</span>
+                <span
+                  className={
+                    selectedUnit.unitMaxHours >= referenceHours
+                      ? 'text-green-600 font-medium'
+                      : 'text-red-500 font-medium'
+                  }
+                >
+                  {selectedUnit.unitMaxHours >= referenceHours ? '✓ 达标' : '✗ 不达标'}
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-gray-100 rounded overflow-hidden mt-1">
+                <div
+                  className="h-full bg-orange-400"
+                  style={{
+                    width: `${Math.min((selectedUnit.unitMaxHours / SUNLIGHT_CONFIG.SUNLIGHT_ANALYSIS.MAX_HOURS) * 100, 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 时间轴悬浮控件 */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/95 shadow-lg rounded-lg px-4 py-2.5 flex items-center gap-3 w-[420px]">
@@ -361,6 +545,8 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
 
         <p className="text-xs text-gray-400 pt-2 border-t">
           🖱️ 左键拖拽旋转视角，滚轮缩放，右键平移。分析基于射线遮挡算法，楼栋越多计算耗时越长。
+          <br />
+          🔥 分析完成后自动显示日照热力图，点击墙面色块可查看该户楼层/日照时长/达标详情。
         </p>
       </div>
     </div>
