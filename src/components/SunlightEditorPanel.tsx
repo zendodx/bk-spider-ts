@@ -24,6 +24,12 @@ import {
   sanitizePolygon,
 } from '@/lib/sunlight/utils';
 import { createEditingBuildingId, type EditingBuilding } from '@/lib/sunlight/editor-types';
+import {
+  getVisualSplitRatiosFromBuilding,
+  resizeUnitRatiosPerFloor,
+  serializeUnitRatiosPerFloor,
+} from '@/lib/sunlight/unit-ratios';
+import VisualSplitEditorModal from '@/components/VisualSplitEditorModal';
 
 type DrawMode = 'idle' | 'scaling' | 'drawing';
 
@@ -204,6 +210,7 @@ export default function SunlightEditorPanel({
           isThisCommunity: b.isThisCommunity !== false,
           unitSplitAngleDeg: b.unitSplitAngleDeg || 0,
           unitNumberingStartSide: b.unitNumberingStartSide || 'A',
+          unitRatiosPerFloor: b.unitRatiosPerFloor,
           points: b.shape.map(p => ({
             x: p.x / editorScale + offsetX,
             y: p.y / editorScale + offsetY,
@@ -743,6 +750,50 @@ export default function SunlightEditorPanel({
     setBuildings(prev => prev.map(b => (b.id === id ? { ...b, ...patch } : b)));
   }, []);
 
+  /**
+   * 修改楼层数或每层户数时，需要联动把已配置的 unitRatiosPerFloor 平滑迁移到新的规格下，
+   * 否则会导致比例数组长度与新的 floors/units 不匹配（迁移自原版 editor.js 的处理逻辑）。
+   */
+  const updateBuildingFloorsOrUnits = useCallback((id: string, patch: { floors?: number; units?: number }) => {
+    setBuildings(prev =>
+      prev.map(b => {
+        if (b.id !== id) return b;
+        const nextFloors = patch.floors ?? b.floors;
+        const nextUnits = patch.units ?? b.units;
+        const nextRatios = resizeUnitRatiosPerFloor(b.unitRatiosPerFloor, b.floors, b.units, nextFloors, nextUnits) ?? undefined;
+        return { ...b, floors: nextFloors, units: nextUnits, unitRatiosPerFloor: nextRatios };
+      })
+    );
+  }, []);
+
+  // ── 可视化分户编辑弹窗 ─────────────────────────────────────────
+  const [visualSplitBuildingId, setVisualSplitBuildingId] = useState<string | null>(null);
+  const visualSplitBuilding = useMemo(
+    () => buildings.find(b => b.id === visualSplitBuildingId) ?? null,
+    [buildings, visualSplitBuildingId]
+  );
+
+  const handleSaveVisualSplit = useCallback(
+    (result: { ratiosPerFloor: number[][]; angleDeg: number }) => {
+      if (!visualSplitBuildingId) return;
+      const before = captureState();
+      setBuildings(prev =>
+        prev.map(b =>
+          b.id === visualSplitBuildingId
+            ? {
+                ...b,
+                unitRatiosPerFloor: serializeUnitRatiosPerFloor(result.ratiosPerFloor, b.floors, b.units) ?? undefined,
+                unitSplitAngleDeg: result.angleDeg,
+              }
+            : b
+        )
+      );
+      pushHistory(before);
+      setVisualSplitBuildingId(null);
+    },
+    [captureState, pushHistory, visualSplitBuildingId]
+  );
+
   // ── 保存到数据库 ───────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     setSaveError('');
@@ -803,6 +854,7 @@ export default function SunlightEditorPanel({
         isThisCommunity: b.isThisCommunity,
         unitSplitAngleDeg: b.unitSplitAngleDeg || undefined,
         unitNumberingStartSide: b.unitNumberingStartSide === 'B' ? 'B' : undefined,
+        unitRatiosPerFloor: serializeUnitRatiosPerFloor(b.unitRatiosPerFloor, b.floors, b.units) || undefined,
         shape: b.points.map(p => ({
           x: (p.x - centerX) * scaleRatio,
           y: (p.y - centerY) * scaleRatio,
@@ -915,7 +967,7 @@ export default function SunlightEditorPanel({
       </div>
 
       {/* 右侧配置面板 */}
-      <div className="w-96 flex-shrink-0 overflow-y-auto border-l border-gray-200 bg-white p-4 space-y-5 text-sm">
+      <div className="w-[34rem] flex-shrink-0 overflow-y-auto border-l border-gray-200 bg-white p-4 space-y-5 text-sm">
         {/* 1. 上传底图 */}
         <div>
           <label className="block font-semibold text-gray-700 mb-1.5">1. 上传规划图/总平图</label>
@@ -1132,16 +1184,17 @@ export default function SunlightEditorPanel({
         {/* 5. 楼栋参数表 */}
         <div>
           <label className="block font-semibold text-gray-700 mb-1.5">5. 楼栋参数表（{buildings.length} 栋）</label>
-          <div className="max-h-64 overflow-y-auto border rounded">
+          <div className="max-h-72 overflow-y-auto border rounded">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="px-1.5 py-1 text-left">名称</th>
-                  <th className="px-1.5 py-1 w-12">层数</th>
-                  <th className="px-1.5 py-1 w-14">层高</th>
-                  <th className="px-1.5 py-1 w-12">户/层</th>
-                  <th className="px-1.5 py-1 w-10">本区</th>
-                  <th className="px-1.5 py-1 w-8"></th>
+                  <th className="px-1.5 py-1.5 text-left min-w-[7rem]">名称</th>
+                  <th className="px-1.5 py-1.5 w-15">层数</th>
+                  <th className="px-1.5 py-1.5 w-15">层高</th>
+                  <th className="px-1.5 py-1.5 w-15">户/层</th>
+                  <th className="px-1.5 py-1.5 w-10">本区</th>
+                  <th className="px-1.5 py-1.5 w-12">分户</th>
+                  <th className="px-1.5 py-1.5 w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1151,43 +1204,47 @@ export default function SunlightEditorPanel({
                     className={`border-t cursor-pointer ${b.id === selectedBuildingId ? 'bg-blue-50' : ''}`}
                     onClick={() => setSelectedBuildingId(b.id)}
                   >
-                    <td className="px-1.5 py-1">
+                    <td className="px-1.5 py-1.5">
                       <input
                         value={b.name}
                         onChange={e => updateBuilding(b.id, { name: e.target.value })}
-                        className="w-full px-1 py-0.5 border rounded text-xs"
+                        className="w-full px-1.5 py-1 border rounded text-xs"
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-1.5 py-1">
+                    <td className="px-1.5 py-1.5">
                       <input
                         type="number"
                         value={b.floors}
-                        onChange={e => updateBuilding(b.id, { floors: clampInt(parseInt(e.target.value), 1, 300, b.floors) })}
-                        className="w-full px-1 py-0.5 border rounded text-xs"
+                        onChange={e =>
+                          updateBuildingFloorsOrUnits(b.id, { floors: clampInt(parseInt(e.target.value), 1, 300, b.floors) })
+                        }
+                        className="w-full px-1.5 py-1 border rounded text-xs"
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-1.5 py-1">
+                    <td className="px-1.5 py-1.5">
                       <input
                         type="number"
                         step={0.01}
                         value={b.floorHeight}
                         onChange={e => updateBuilding(b.id, { floorHeight: clampFloat(parseFloat(e.target.value), 1, 20, b.floorHeight) })}
-                        className="w-full px-1 py-0.5 border rounded text-xs"
+                        className="w-full px-1.5 py-1 border rounded text-xs"
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-1.5 py-1">
+                    <td className="px-1.5 py-1.5">
                       <input
                         type="number"
                         value={b.units}
-                        onChange={e => updateBuilding(b.id, { units: clampInt(parseInt(e.target.value), 1, 50, b.units) })}
-                        className="w-full px-1 py-0.5 border rounded text-xs"
+                        onChange={e =>
+                          updateBuildingFloorsOrUnits(b.id, { units: clampInt(parseInt(e.target.value), 1, 50, b.units) })
+                        }
+                        className="w-full px-1.5 py-1 border rounded text-xs"
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-1.5 py-1 text-center">
+                    <td className="px-1.5 py-1.5 text-center">
                       <input
                         type="checkbox"
                         checked={b.isThisCommunity}
@@ -1195,7 +1252,20 @@ export default function SunlightEditorPanel({
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-1.5 py-1 text-center">
+                    <td className="px-1.5 py-1.5 text-center">
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setVisualSplitBuildingId(b.id);
+                        }}
+                        disabled={b.units <= 1}
+                        className="px-1 py-0.5 border rounded text-blue-600 border-blue-300 hover:bg-blue-50 disabled:opacity-30 disabled:hover:bg-transparent whitespace-nowrap"
+                        title={b.units <= 1 ? '每层仅 1 户，无需分户' : '可视化编辑每层各户占比'}
+                      >
+                        编辑
+                      </button>
+                    </td>
+                    <td className="px-1.5 py-1.5 text-center">
                       <button
                         onClick={e => {
                           e.stopPropagation();
@@ -1210,7 +1280,7 @@ export default function SunlightEditorPanel({
                 ))}
                 {buildings.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center text-gray-400 py-4">
+                    <td colSpan={7} className="text-center text-gray-400 py-4">
                       暂无楼栋，请先绘制
                     </td>
                   </tr>
@@ -1222,6 +1292,22 @@ export default function SunlightEditorPanel({
             <p className="text-xs text-gray-400 mt-1">已选中：{selectedBuilding.name}（可拖动画布中的楼栋移动位置，Delete 键删除）</p>
           )}
         </div>
+
+        {visualSplitBuilding && (
+          <VisualSplitEditorModal
+            buildingName={visualSplitBuilding.name}
+            floors={visualSplitBuilding.floors}
+            unitsPerFloor={visualSplitBuilding.units}
+            initialRatiosPerFloor={getVisualSplitRatiosFromBuilding(
+              visualSplitBuilding.unitRatiosPerFloor,
+              visualSplitBuilding.floors,
+              visualSplitBuilding.units
+            )}
+            initialAngleDeg={visualSplitBuilding.unitSplitAngleDeg}
+            onCancel={() => setVisualSplitBuildingId(null)}
+            onSave={handleSaveVisualSplit}
+          />
+        )}
 
         {/* 保存 */}
         <div className="pt-2 border-t">

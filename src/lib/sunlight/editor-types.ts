@@ -14,6 +14,12 @@ export interface EditingBuilding {
   isThisCommunity: boolean;
   unitSplitAngleDeg: number;
   unitNumberingStartSide: 'A' | 'B';
+  /**
+   * 每层各户宽度占比（可视化分户编辑结果）。
+   * 长度为 1 表示所有楼层复用同一套比例；否则长度等于 floors，逐层配置。
+   * 未配置（undefined/null）时按户数等分。
+   */
+  unitRatiosPerFloor?: (number[] | null)[];
   /** 楼栋轮廓，像素坐标（相对底图左上角） */
   points: Point2D[];
 }
