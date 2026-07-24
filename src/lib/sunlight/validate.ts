@@ -108,6 +108,16 @@ export function normalizeBuildingData(data: unknown, options: NormalizeOptions =
     }
   }
 
+  // originPixel：origin 在底图上的绝对像素坐标，用于重新打开编辑器时精确复原标注框位置。
+  // 可选字段（旧版本数据没有），不合法时忽略而不是报错，避免影响整体保存。
+  let originPixel: Point2D | undefined;
+  if (input.originPixel != null) {
+    const op = input.originPixel as Point2D;
+    if (op && typeof op === 'object' && Number.isFinite(op.x) && Number.isFinite(op.y)) {
+      originPixel = { x: op.x, y: op.y };
+    }
+  }
+
   if (!Array.isArray(input.buildings)) {
     errors.push('buildings must be an array');
     return { valid: false, errors, warnings, data: null };
@@ -278,6 +288,7 @@ export function normalizeBuildingData(data: unknown, options: NormalizeOptions =
     northAngle,
     scaleRatio,
     origin,
+    ...(originPixel ? { originPixel } : {}),
     buildings,
   };
 

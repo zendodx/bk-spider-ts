@@ -113,6 +113,11 @@ export default function SunlightEditorPanel({
   // ── 初始加载已有方案（把米坐标转换回像素坐标以便继续编辑） ─────────
   // 关键原则：像素坐标 = 米坐标 / scaleRatio + origin像素偏移，其中 scaleRatio 必须严格使用
   // 保存时的原始值，不能重新计算——否则会导致标注框与底图比例对不上（见历史 bug）。
+  //
+  // 精确复原依赖 originPixel（origin 在底图上的绝对像素坐标，保存时写入）：
+  // pixelX = meterX / scaleRatio + originPixel.x。
+  // 若加载的是旧版本数据（缺少 originPixel），则退化为「bbox 与底图居中对齐」的近似算法，
+  // 可能与原始标注位置存在偏差（这是历史数据的已知限制，无法逆向精确还原）。
   useEffect(() => {
     if (!initialPlan) return;
 
@@ -133,6 +138,7 @@ export default function SunlightEditorPanel({
     // 必须原样复用保存时的比例尺，不可重新计算，否则标注框与底图会错位
     const editorScale = initialPlan.scaleRatio > 0 ? initialPlan.scaleRatio : 1;
     const padding = 80;
+    const originPixel = initialPlan.originPixel;
 
     setScaleRatio(editorScale);
     setScaleStatus('set');
@@ -150,23 +156,31 @@ export default function SunlightEditorPanel({
           unitSplitAngleDeg: b.unitSplitAngleDeg || 0,
           unitNumberingStartSide: b.unitNumberingStartSide || 'A',
           points: b.shape.map(p => ({
-            x: (p.x - minX) / editorScale + offsetX,
-            y: (p.y - minY) / editorScale + offsetY,
+            x: p.x / editorScale + offsetX,
+            y: p.y / editorScale + offsetY,
           })),
         }))
       );
     };
 
     if (initialHasBaseImage) {
-      // 有底图：画布尺寸必须等于底图真实像素尺寸，楼栋坐标偏移量取 bbox 与画布中心对齐后的实际值，
-      // 而不是固定的 padding——否则底图与标注框的相对位置在重新打开时会发生偏移。
+      // 有底图：画布尺寸必须等于底图真实像素尺寸。
       const img = new Image();
       img.onload = () => {
         imageRef.current = img;
-        const bboxWidthPx = (maxX - minX) / editorScale;
-        const bboxHeightPx = (maxY - minY) / editorScale;
-        const offsetX = (img.width - bboxWidthPx) / 2;
-        const offsetY = (img.height - bboxHeightPx) / 2;
+        let offsetX: number;
+        let offsetY: number;
+        if (originPixel) {
+          // 精确复原：直接使用保存时记录的像素原点
+          offsetX = originPixel.x;
+          offsetY = originPixel.y;
+        } else {
+          // 兼容旧数据：按 bbox 居中对齐底图（近似值，可能有偏差）
+          const bboxWidthPx = (maxX - minX) / editorScale;
+          const bboxHeightPx = (maxY - minY) / editorScale;
+          offsetX = (img.width - bboxWidthPx) / 2 - minX / editorScale;
+          offsetY = (img.height - bboxHeightPx) / 2 - minY / editorScale;
+        }
         applyBuildings(offsetX, offsetY);
         setCanvasSize({ width: img.width, height: img.height });
         setIsImageLoaded(true);
@@ -175,7 +189,9 @@ export default function SunlightEditorPanel({
       img.src = `/api/sunlight/image?communityUrl=${encodeURIComponent(communityUrl)}`;
     } else {
       // 无底图：画布尺寸按 bbox + 固定 padding 生成即可，不存在错位风险
-      applyBuildings(padding, padding);
+      const offsetX = originPixel ? originPixel.x : padding - minX / editorScale;
+      const offsetY = originPixel ? originPixel.y : padding - minY / editorScale;
+      applyBuildings(offsetX, offsetY);
       setCanvasSize({
         width: Math.max(800, Math.ceil((maxX - minX) / editorScale + padding * 2)),
         height: Math.max(600, Math.ceil((maxY - minY) / editorScale + padding * 2)),
@@ -702,6 +718,9 @@ export default function SunlightEditorPanel({
       northAngle: normalizedNorthAngle,
       scaleRatio,
       origin: { x: centerX, y: centerY },
+      // 记录 origin 在底图上的绝对像素坐标（即标注时画布坐标系下的 bbox 中心），
+      // 重新打开编辑器时据此精确复原标注框位置，避免与底图错位。
+      originPixel: { x: centerX, y: centerY },
       buildings: cleanedBuildings.map(b => ({
         name: b.name,
         floors: b.floors,

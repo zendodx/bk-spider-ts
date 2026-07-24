@@ -37,6 +37,12 @@ export interface BuildingPlanData {
   northAngle: number;
   scaleRatio: number;
   origin: Point2D;
+  /**
+   * origin（米坐标原点）在底图上的绝对像素坐标。
+   * 用于重新打开编辑器时精确复原标注框在底图上的原始位置——
+   * 若缺失（旧版本数据），编辑器会退化为「按 bbox 居中对齐底图」的近似算法，可能存在轻微错位。
+   */
+  originPixel?: Point2D;
   buildings: BuildingData[];
 }
 
