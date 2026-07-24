@@ -11,14 +11,21 @@ import SettingsPanel from '@/components/SettingsPanel';
 import CleanerPanel from '@/components/CleanerPanel';
 import BackupPanel from '@/components/BackupPanel';
 import ExpiredListingsPanel from '@/components/ExpiredListingsPanel';
-import CommunityPanel from '@/components/CommunityPanel';
+import CommunityPanel, { type SunlightTarget } from '@/components/CommunityPanel';
+import SunlightPanel from '@/components/SunlightPanel';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 import { useCityContext } from '@/lib/CityContext';
 
-type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'community' | 'favorites' | 'cleaner' | 'settings' | 'backup';
+type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'community' | 'sunlight' | 'favorites' | 'cleaner' | 'settings' | 'backup';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
+  const [pendingSunlightTarget, setPendingSunlightTarget] = useState<SunlightTarget | null>(null);
+
+  const handleOpenSunlightAnalysis = (targetInfo: SunlightTarget) => {
+    setPendingSunlightTarget(targetInfo);
+    setActiveTab('sunlight');
+  };
   const { theme, setTheme } = useTheme();
   const { cityNames, selectedCity, setSelectedCity, selectedHost } = useCityContext();
 
@@ -30,6 +37,7 @@ export default function Home() {
     { id: 'listings',  label: '房源列表', icon: '🏘️' },
     { id: 'expired',   label: '失效房源', icon: '🏚️' },
     { id: 'community', label: '小区信息', icon: '🗺️' },
+    { id: 'sunlight',  label: '采光分析', icon: '☀️' },
     { id: 'favorites', label: '房源收藏', icon: '⭐' },
     { id: 'cleaner',   label: '数据清洗', icon: '🧹' },
     { id: 'settings',  label: '系统设置', icon: '⚙️' },
@@ -141,7 +149,8 @@ export default function Home() {
         <div className="h-full" style={{ display: activeTab === 'stats'     ? 'block' : 'none' }}><StatsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'listings'  ? 'block' : 'none' }}><ListingsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'expired'   ? 'block' : 'none' }}><ExpiredListingsPanel /></div>
-        <div className="h-full" style={{ display: activeTab === 'community' ? 'block' : 'none' }}><CommunityPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'community' ? 'block' : 'none' }}><CommunityPanel onOpenSunlightAnalysis={handleOpenSunlightAnalysis} /></div>
+        <div className="h-full" style={{ display: activeTab === 'sunlight' ? 'block' : 'none' }}><SunlightPanel pendingTarget={pendingSunlightTarget} onConsumePendingTarget={() => setPendingSunlightTarget(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'favorites' ? 'block' : 'none' }}><FavoritesPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'cleaner'   ? 'block' : 'none' }}><CleanerPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'settings'  ? 'block' : 'none' }}><SettingsPanel /></div>

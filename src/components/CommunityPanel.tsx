@@ -25,6 +25,17 @@ interface CommunityStatRow {
 
 type OrderBy = 'listing_count' | 'total_unique' | 'avg_unit_price' | 'latest_date' | 'community' | 'crawl_days';
 
+export interface SunlightTarget {
+  communityUrl: string;
+  community: string;
+  city: string;
+  district: string;
+}
+
+interface CommunityPanelProps {
+  onOpenSunlightAnalysis?: (target: SunlightTarget) => void;
+}
+
 const ORDER_OPTIONS: { value: `${OrderBy}|${'asc' | 'desc'}`; label: string }[] = [
   { value: 'listing_count|desc',  label: '挂牌数 ↓ 最多' },
   { value: 'listing_count|asc',   label: '挂牌数 ↑ 最少' },
@@ -86,7 +97,7 @@ function SortTh({
   );
 }
 
-export default function CommunityPanel() {
+export default function CommunityPanel({ onOpenSunlightAnalysis }: CommunityPanelProps) {
   const { selectedCityFilter } = useCityContext();
   const [keyword, setKeyword]     = useState('');
   const [inputKeyword, setInputKeyword] = useState('');
@@ -315,6 +326,7 @@ export default function CommunityPanel() {
                   <col className="w-24" />           {/* 中位价 */}
                   <col className="w-24" />           {/* 均总价 */}
                   <col className="w-32" />           {/* 总价区间 */}
+                  <col className="w-24" />           {/* 操作 */}
                 </colgroup>
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
@@ -335,6 +347,7 @@ export default function CommunityPanel() {
                     <th className="px-3 py-2.5 text-right font-semibold text-gray-500 whitespace-nowrap bg-blue-50">
                       总价区间<br /><span className="font-normal text-gray-400">(万)</span>
                     </th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-500 whitespace-nowrap">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -420,6 +433,26 @@ export default function CommunityPanel() {
                         {row.min_total_price != null && row.max_total_price != null
                           ? `${fmtPrice(row.min_total_price)} ~ ${fmtPrice(row.max_total_price)}`
                           : '—'}
+                      </td>
+
+                      {/* 操作：采光分析（仅有小区链接时可用） */}
+                      <td className="px-3 py-2.5 text-center">
+                        {row.community_url ? (
+                          <button
+                            onClick={() => onOpenSunlightAnalysis?.({
+                              communityUrl: row.community_url as string,
+                              community: row.community,
+                              city: row.city,
+                              district: row.district,
+                            })}
+                            className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium whitespace-nowrap transition-colors"
+                            title="进入采光分析"
+                          >
+                            ☀️ 采光分析
+                          </button>
+                        ) : (
+                          <span className="text-gray-300" title="该小区缺少链接，暂不支持采光分析">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

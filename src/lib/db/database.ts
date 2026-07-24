@@ -164,6 +164,38 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_house_note_detail_url ON house_note (detail_url);
   `);
+
+  // 小区采光分析方案表：规划标注底图 + 标注 JSON + 分析结果缓存（每个小区仅保留一份最新方案）
+  // 以 community_url（小区详情页链接）作为唯一键，因为不同城市/区域可能存在同名小区，
+  // community 名称本身不具备唯一性，只作为展示冗余字段保留。
+  //
+  // 兼容旧版本表结构（早期以 community 作为唯一键，缺少 community_url/district/base_image_* 等列）：
+  // 若检测到旧结构，直接丢弃重建——该表仅用于缓存标注方案，重建不影响爬虫主数据。
+  const existingSunlightPlanColumns = instance
+    .prepare("PRAGMA table_info(community_sunlight_plan)")
+    .all() as { name: string }[];
+  if (existingSunlightPlanColumns.length > 0 && !existingSunlightPlanColumns.some(c => c.name === 'community_url')) {
+    instance.exec('DROP TABLE IF EXISTS community_sunlight_plan');
+  }
+
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS community_sunlight_plan (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      community_url    TEXT    NOT NULL,
+      community        TEXT    NOT NULL DEFAULT '',
+      city             TEXT    NOT NULL DEFAULT '',
+      district         TEXT    NOT NULL DEFAULT '',
+      base_image_blob  BLOB,
+      base_image_mime  TEXT,
+      base_image_name  TEXT,
+      plan_json        TEXT    NOT NULL,
+      analysis_json    TEXT,
+      plan_fingerprint TEXT,
+      created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sunlight_plan_community_url ON community_sunlight_plan (community_url);
+  `);
 }
 
 /**
