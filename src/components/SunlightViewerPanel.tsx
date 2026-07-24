@@ -73,6 +73,9 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     sceneRef.current = handles;
 
     const onResize = () => {
+      // 容器被父级 Tab 以 display:none 隐藏时宽高为 0，此时不更新渲染尺寸/相机比例，
+      // 避免出现除以 0（aspect = NaN）或渲染画布尺寸变为 0 的问题；等切回可见时会再次触发。
+      if (container.clientWidth <= 0 || container.clientHeight <= 0) return;
       handles.camera.aspect = container.clientWidth / container.clientHeight;
       handles.camera.updateProjectionMatrix();
       handles.renderer.setSize(container.clientWidth, container.clientHeight);
@@ -80,8 +83,17 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     };
     window.addEventListener('resize', onResize);
 
+    // 用 ResizeObserver 监听容器自身尺寸变化（含父级 Tab 从 display:none 切回可见的情况），
+    // 仅监听 window resize 无法感知这种由 CSS display 切换引起的尺寸变化。
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => onResize());
+      observer.observe(container);
+    }
+
     return () => {
       window.removeEventListener('resize', onResize);
+      observer?.disconnect();
       handles.dispose();
       sceneRef.current = null;
     };

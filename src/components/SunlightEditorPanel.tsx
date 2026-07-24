@@ -314,6 +314,10 @@ export default function SunlightEditorPanel({
   const resetView = useCallback(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper || !isImageLoaded) return;
+    // 容器被父级 Tab 以 display:none 隐藏时 clientWidth/clientHeight 为 0，
+    // 若继续按 0 计算会得到 scale=0，导致画布被缩放到不可见（切换 Tab 后"数据消失"的根因）。
+    // 此时跳过计算，等容器重新可见（ResizeObserver 触发）时再计算一次正确的视角。
+    if (wrapper.clientWidth <= 0 || wrapper.clientHeight <= 0) return;
     const padding = 40;
     const wRatio = (wrapper.clientWidth - padding) / canvasSize.width;
     const hRatio = (wrapper.clientHeight - padding) / canvasSize.height;
@@ -330,6 +334,24 @@ export default function SunlightEditorPanel({
     resetView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isImageLoaded, canvasSize.width, canvasSize.height]);
+
+  // 监听容器尺寸变化（含父级 Tab 从 display:none 切回可见的情况），
+  // 此时若视角尚未正确初始化（scale 仍为初始值 1 但容器此前不可见），重新计算一次。
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) {
+        resetView();
+      }
+    });
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getCanvasCoordinates = useCallback((clientX: number, clientY: number): Point2D => {
     const wrapper = wrapperRef.current;
