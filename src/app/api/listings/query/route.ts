@@ -128,6 +128,10 @@ export async function GET(request: NextRequest) {
 
     // 按 detail_url 去重，保留 created_at 最新的那一行
     // 通过相关标量子查询获取上一次采集日期的价格，用于趋势展示
+    //
+    // 性能说明：prev_* 子查询的比较条件必须写成 h2.created_at < t.created_at（不能套 date() 函数），
+    // 否则 SQLite 无法命中 idx_detail_url_created_at 索引，会退化为对全表做相关子查询扫描 + 排序，
+    // 数据量大时（如本表几万~十几万行）会导致整个接口耗时从几十毫秒暴涨到数秒。
     const sql = `
       SELECT
         t.id,
@@ -154,7 +158,7 @@ export async function GET(request: NextRequest) {
           FROM house_listings h2
           WHERE h2.detail_url = t.detail_url
             AND h2.is_deleted = 0
-            AND date(h2.created_at) < date(t.created_at)
+            AND h2.created_at < t.created_at
           ORDER BY h2.created_at DESC
           LIMIT 1
         ) AS prev_unit_price,
@@ -163,7 +167,7 @@ export async function GET(request: NextRequest) {
           FROM house_listings h3
           WHERE h3.detail_url = t.detail_url
             AND h3.is_deleted = 0
-            AND date(h3.created_at) < date(t.created_at)
+            AND h3.created_at < t.created_at
           ORDER BY h3.created_at DESC
           LIMIT 1
         ) AS prev_total_price,
@@ -172,7 +176,7 @@ export async function GET(request: NextRequest) {
           FROM house_listings h4
           WHERE h4.detail_url = t.detail_url
             AND h4.is_deleted = 0
-            AND date(h4.created_at) < date(t.created_at)
+            AND h4.created_at < t.created_at
           ORDER BY h4.created_at DESC
           LIMIT 1
         ) AS prev_crawl_date

@@ -96,8 +96,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. 获取基准日期当天的所有 detail_url 集合（去重，保留最新记录）
-    const latestConds = ['community LIKE ?', 'is_deleted = 0', 'date(created_at) = ?', 'detail_url IS NOT NULL'];
-    const latestPs: unknown[] = [`%${community}%`, baseDate];
+    // 用 created_at >= 当天零点 AND < 次日零点（区间比较）代替 date(created_at) = ?，避免函数包裹导致索引失效
+    const baseDateEnd = `${baseDate} 23:59:59`;
+    const latestConds = ['community LIKE ?', 'is_deleted = 0', 'created_at >= ?', 'created_at <= ?', 'detail_url IS NOT NULL'];
+    const latestPs: unknown[] = [`%${community}%`, `${baseDate} 00:00:00`, baseDateEnd];
     if (city) { latestConds.push('city LIKE ?'); latestPs.push(`%${city}%`); }
     const latestUrlsResult = db.prepare(`
       SELECT DISTINCT detail_url
@@ -110,19 +112,24 @@ export async function GET(request: NextRequest) {
     // 3. 基本筛选条件
     //    innerConds：用于子查询（无表别名，直接作用于 house_listings）
     //    outerConds：用于外层 WHERE（所有字段加 t. 前缀，避免 JOIN 后歧义）
+    //
+    // 性能说明：用 created_at < 'baseDate 00:00:00'（字符串比较）代替 date(created_at) < baseDate，
+    // 两者语义等价（created_at 格式统一为 'YYYY-MM-DD HH:MM:SS'），但前者能命中 idx_detail_url_created_at /
+    // idx_crawl_time 等索引做范围扫描，避免对 created_at 逐行计算 date() 导致索引失效、大数据量下变慢。
+    const baseDateStart = `${baseDate} 00:00:00`;
     const innerConds: string[] = [
       'is_deleted = 0',
       'community LIKE ?',
-      "date(created_at) < ?",   // 只看基准日期之前的历史数据
+      'created_at < ?',   // 只看基准日期之前的历史数据
       'detail_url IS NOT NULL',
     ];
     const outerConds: string[] = [
       't.is_deleted = 0',
       't.community LIKE ?',
-      "date(t.created_at) < ?",
+      't.created_at < ?',
       't.detail_url IS NOT NULL',
     ];
-    const params: unknown[] = [`%${community}%`, baseDate];
+    const params: unknown[] = [`%${community}%`, baseDateStart];
 
     if (city) {
       innerConds.push('city LIKE ?');

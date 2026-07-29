@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import type { BuildingPlanData } from '@/types/sunlight';
 import { SUNLIGHT_CONFIG } from '@/lib/sunlight/config';
 import { calculateSolarDeclination, calculateSolarTimeOffset, getSeasonPresetDate, type SeasonPreset } from '@/lib/sunlight/solar-time';
-import { formatTime, roundTo } from '@/lib/sunlight/utils';
+import { formatTime, roundTo, transformProjectData } from '@/lib/sunlight/utils';
 import {
   clearHeatmapInteractionState,
   collectBuildingMeshes,
@@ -76,11 +76,19 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
 
   const analysisDate = useMemo(() => (seasonPreset === 'custom' ? customDate : getSeasonPresetDate(seasonPreset) || customDate), [seasonPreset, customDate]);
 
+  /**
+   * 标注时楼栋轮廓坐标是相对「图纸朝上方向」的，northAngle 记录了图纸朝上方向相对真北的偏转角度
+   * （顺时针为正）。3D 场景与太阳位置计算都以世界坐标系正北（Z 轴负方向）为基准，
+   * 因此必须先把标注数据按 northAngle 旋转对齐到真北，否则楼栋朝向与太阳方位的相对关系会完全错乱，
+   * 导致算出来的采光时长与实际直觉感受不符（此前迁移时遗漏了这一步，是问题的根因）。
+   */
+  const currentData = useMemo(() => transformProjectData(planData, planData.northAngle) ?? planData, [planData]);
+
   const solarSettings = useMemo(() => {
     const declination = calculateSolarDeclination(analysisDate);
-    const solarTimeOffset = calculateSolarTimeOffset(analysisDate, planData.longitude, planData.timeZone);
+    const solarTimeOffset = calculateSolarTimeOffset(analysisDate, currentData.longitude, currentData.timeZone);
     return { declination, solarTimeOffset };
-  }, [analysisDate, planData.longitude, planData.timeZone]);
+  }, [analysisDate, currentData.longitude, currentData.timeZone]);
 
   // ── 场景初始化 ─────────────────────────────────────────────────
   useEffect(() => {
@@ -120,7 +128,7 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
   useEffect(() => {
     const handles = sceneRef.current;
     if (!handles) return;
-    loadBuildingsIntoScene(handles.buildingsGroup, planData);
+    loadBuildingsIntoScene(handles.buildingsGroup, currentData);
     fitViewToBuildings(handles);
     // 楼栋几何体重建后，热力图射线遮挡判断所依赖的实体网格缓存需要同步刷新
     refreshHeatmapOccluderMeshes(heatmapStateRef.current, handles.buildingsGroup);
@@ -130,7 +138,7 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     setShowHeatmap(false);
     setHeatmapReady(false);
     setSelectedUnit(null);
-  }, [planData]);
+  }, [currentData]);
 
   // ── 可见性过滤（仅本小区） ─────────────────────────────────────
   useEffect(() => {
@@ -142,15 +150,15 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
       }
     });
     handles.requestRender(true);
-  }, [showOwnOnly, planData]);
+  }, [showOwnOnly, currentData]);
 
   // ── 时间轴驱动太阳位置 ─────────────────────────────────────────
   useEffect(() => {
     const handles = sceneRef.current;
     if (!handles || !Number.isFinite(solarSettings.declination) || !Number.isFinite(solarSettings.solarTimeOffset)) return;
-    const alt = updateSunLight(handles, hour, planData.latitude, solarSettings.declination, solarSettings.solarTimeOffset);
+    const alt = updateSunLight(handles, hour, currentData.latitude, solarSettings.declination, solarSettings.solarTimeOffset);
     setSunAltitudeDeg(roundTo((alt * 180) / Math.PI, 1));
-  }, [hour, planData.latitude, solarSettings]);
+  }, [hour, currentData.latitude, solarSettings]);
 
   // ── 加载已缓存的分析结果 ───────────────────────────────────────
   useEffect(() => {
@@ -177,8 +185,8 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     setProgress(0);
     try {
       const buildingMeshes = collectBuildingMeshes(handles.buildingsGroup);
-      const result = await runSunlightAnalysis(planData, buildingMeshes, {
-        latitude: planData.latitude,
+      const result = await runSunlightAnalysis(currentData, buildingMeshes, {
+        latitude: currentData.latitude,
         declination: solarSettings.declination,
         solarTimeOffset: solarSettings.solarTimeOffset,
         referenceHours,
@@ -199,7 +207,7 @@ export default function SunlightViewerPanel({ communityUrl, planData, cachedAnal
     } finally {
       setAnalyzing(false);
     }
-  }, [planData, referenceHours, solarSettings]);
+  }, [currentData, referenceHours, solarSettings]);
 
   // ── 热力图显隐开关 ─────────────────────────────────────────────
   const toggleHeatmap = useCallback((show: boolean) => {

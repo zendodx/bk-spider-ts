@@ -113,6 +113,9 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_detail_url_crawl_time ON house_listings (detail_url, crawl_time);
     -- 供 /api/community/stats 小区聚合查询使用：WHERE is_deleted=0 GROUP BY community
     CREATE INDEX IF NOT EXISTS idx_deleted_community  ON house_listings (is_deleted, community);
+    -- 供 /api/listings/query、/api/listings/expired 按 detail_url 查询"上一次/历史"记录使用（字段为 created_at，
+    -- 与已有的 idx_detail_url_crawl_time 字段不同，且查询条件需避免 date() 函数包裹以命中该索引，否则会退化为全表扫描）
+    CREATE INDEX IF NOT EXISTS idx_detail_url_created_at ON house_listings (detail_url, created_at);
   `);
 
   // Cookie 存储表
@@ -198,6 +201,29 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sunlight_plan_community_url ON community_sunlight_plan (community_url);
   `);
+
+  // 若数据库从未执行过 ANALYZE（缺少 sqlite_stat1 统计信息表），SQLite 查询优化器在缺乏
+  // 基数估算依据时，面对多条件 LIKE + JOIN + 聚合的复杂查询（如 /api/listings/query、
+  // /api/listings/expired）可能选择极差的执行计划，导致查询耗时从几十毫秒暴涨到数秒甚至十几秒。
+  // 这里做一次性检测+执行，代价很小（几十~百毫秒级），且只在首次初始化/老库升级时触发一次；
+  // 后续保持统计信息新鲜由爬虫写入完成后调用 analyzeDatabase() 负责，见 spider/run/route.ts。
+  const hasStats = instance
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_stat1'")
+    .get();
+  if (!hasStats) {
+    instance.exec('ANALYZE');
+  }
+}
+
+/**
+ * 刷新查询优化器统计信息（ANALYZE）。
+ * 建议在批量写入大量数据后调用（如爬虫抓取完成后），避免统计信息过期导致
+ * 查询优化器对表基数估算失准、进而为复杂查询选择低效执行计划。
+ * 耗时通常在几十~几百毫秒级别（与表行数正相关），可放心同步调用。
+ */
+export function analyzeDatabase(dbPath?: string): void {
+  const instance = getDb(dbPath);
+  instance.exec('ANALYZE');
 }
 
 /**

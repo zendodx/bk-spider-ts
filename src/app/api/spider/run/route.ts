@@ -11,7 +11,7 @@ import { DataTransformer, CITY_MAPPING, JINAN_DISTRICTS } from '@/lib/spider/dat
 import { BeikeSpider } from '@/lib/spider/spider';
 import { AuthManager } from '@/lib/spider/auth';
 import { HouseRepository } from '@/lib/db/repository';
-import { getDb, initDatabase } from '@/lib/db/database';
+import { getDb, initDatabase, analyzeDatabase } from '@/lib/db/database';
 import { DataExporter } from '@/lib/exporter';
 import { getDataDir, getDBPath } from '@/lib/settings';
 
@@ -156,6 +156,17 @@ export async function POST(request: NextRequest) {
           }
 
           sendLog(`✓ 爬取完成，共保存 ${totalSaved} 条数据`);
+
+          // 爬取完成后刷新数据库查询优化器统计信息（ANALYZE），避免大批量写入后
+          // 数据分布变化导致统计信息过期，进而使房源列表等复杂查询的执行计划变差、越查越慢
+          if (totalSaved > 0) {
+            try {
+              analyzeDatabase(finalDbPath);
+              sendLog('✓ 数据库统计信息已刷新');
+            } catch (e) {
+              sendLog(`⚠ 数据库统计信息刷新失败: ${e}`);
+            }
+          }
 
           // 爬取完成后保存最新 Cookie（服务端可能刷新了 token）
           try {
