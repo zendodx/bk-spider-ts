@@ -8,6 +8,9 @@
     "start": "next start -p 3799",
     "rebuild:system": "npm rebuild better-sqlite3"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

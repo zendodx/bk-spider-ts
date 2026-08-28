@@ -14,7 +14,12 @@
 
 ## 快速开始
 
+> **Node 版本要求**：本项目要求 **Node.js 20+**（推荐 v20 LTS）。项目根目录已配置 `.nvmrc`，使用 nvm 可直接 `nvm use` 自动切换。
+
 ```bash
+# 切换到 Node 20（如使用 nvm）
+nvm use            # 自动读取 .nvmrc
+
 # 安装依赖
 npm install
 
