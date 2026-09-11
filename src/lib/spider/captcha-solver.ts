@@ -75,6 +75,24 @@ interface NonePlan {
 
 type CaptchaPlan = SliderPlan | ClickPlan | NonePlan;
 
+/** 验证码在页面上的实际区域（CSS 像素坐标），用于截图裁剪与坐标映射 */
+interface CaptchaRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 极验验证码容器候选选择器（优先截容器而不是全页，VL 定位更准） */
+const CAPTCHA_CONTAINER_SELECTORS = [
+  '.geetest_panel_box',
+  '.geetest_box',
+  '.geetest_widget',
+  '#captcha',
+  '.captcha-container',
+  'div[class*="captcha"]',
+];
+
 export interface CaptchaSolverOptions {
   apiKey?: string;
   baseURL?: string;
@@ -144,24 +162,29 @@ export class CaptchaSolver {
    * @param captchaSelectors 用于判定验证码是否仍存在的选择器列表
    * @returns true = 已通过；false = AI 未能解决，调用方应回退人工
    */
-  async trySolve(page: Page, captchaSelectors: string[]): Promise<boolean> {
+  async trySolve(
+    page: Page,
+    captchaSelectors: string[],
+    onLog?: (msg: string) => void
+  ): Promise<boolean> {
+    const log = onLog ?? this.log;
     if (!this.isEnabled()) return false;
 
     const { model } = this.resolveConfig();
     for (let attempt = 1; attempt <= AI_MAX_ATTEMPTS; attempt++) {
-      this.log(`🤖 AI 验证码识别中（模型 ${model}，第 ${attempt}/${AI_MAX_ATTEMPTS} 次）...`);
+      log(`🤖 AI 验证码识别中（模型 ${model}，第 ${attempt}/${AI_MAX_ATTEMPTS} 次）...`);
       try {
-        const solved = await this.trySolveOnce(page, captchaSelectors);
+        const solved = await this.trySolveOnce(page, captchaSelectors, log);
         if (solved) {
-          this.log('🤖 AI 验证通过 ✓');
+          log('🤖 AI 验证通过 ✓');
           return true;
         }
       } catch (e) {
-        this.log(`🤖 AI 识别异常: ${e instanceof Error ? e.message : e}`);
+        log(`🤖 AI 识别异常: ${e instanceof Error ? e.message : e}`);
       }
     }
 
-    this.log('🤖 AI 未能通过验证，转人工处理');
+    log('🤖 AI 未能通过验证，转人工处理');
     return false;
   }
 
@@ -222,21 +245,36 @@ export class CaptchaSolver {
   }
 
   /** 单轮求解：截图 → 识别 → 执行 → 校验 */
-  private async trySolveOnce(page: Page, captchaSelectors: string[]): Promise<boolean> {
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-    const screenshot = await page.screenshot({ type: 'jpeg', quality: 90 });
+  private async trySolveOnce(
+    page: Page,
+    captchaSelectors: string[],
+    log: (msg: string) => void
+  ): Promise<boolean> {
+    // 优先裁剪验证码容器区域截图（更高相对分辨率，VL 坐标更准），找不到容器则全页截图
+    const region = await this.findCaptchaRegion(page);
+    const screenshot = await page.screenshot({
+      type: 'jpeg',
+      quality: 95,
+      ...(region ? { clip: region } : {}),
+    });
     const base64 = screenshot.toString('base64');
 
-    const plan = await this.askVisionModel(base64);
+    const map: CaptchaRegion = region ?? (() => {
+      const vp = page.viewportSize() ?? { width: 1280, height: 800 };
+      return { x: 0, y: 0, width: vp.width, height: vp.height };
+    })();
+
+    const plan = await this.askVisionModel(base64, log);
     if (!plan || plan.type === 'none') {
-      this.log('🤖 视觉模型未识别出可操作的验证码');
+      log('🤖 视觉模型未识别出可操作的验证码');
       return false;
     }
+    log(`🤖 模型识别结果：${JSON.stringify(plan)}`);
 
     if (plan.type === 'slider') {
-      await this.solveSlider(page, plan, viewport.width, viewport.height);
+      await this.solveSlider(page, plan, map, log);
     } else {
-      await this.solveClick(page, plan, viewport.width, viewport.height);
+      await this.solveClick(page, plan, map, log);
     }
 
     // 等待验证结果生效，然后检查验证码元素是否已消失
@@ -247,39 +285,57 @@ export class CaptchaSolver {
     return true;
   }
 
+  /** 找到可见的验证码容器并返回其裁剪区域（四周留 20px 边距，限制在视口内） */
+  private async findCaptchaRegion(page: Page): Promise<CaptchaRegion | null> {
+    const vp = page.viewportSize() ?? { width: 1280, height: 800 };
+    for (const sel of CAPTCHA_CONTAINER_SELECTORS) {
+      const el = await page.$(sel);
+      if (!el) continue;
+      const box = await el.boundingBox().catch(() => null);
+      if (!box || box.width < 50 || box.height < 50) continue;
+      const pad = 20;
+      return {
+        x: Math.max(0, box.x - pad),
+        y: Math.max(0, box.y - pad),
+        width: Math.min(vp.width, box.x + box.width + pad) - Math.max(0, box.x - pad),
+        height: Math.min(vp.height, box.y + box.height + pad) - Math.max(0, box.y - pad),
+      };
+    }
+    return null;
+  }
+
   /**
    * 滑块验证码：以拟人轨迹把滑块拖到缺口位置
+   * @param map VL 返回的百分比坐标所对应的页面区域（裁剪图的原点与尺寸）
    */
   private async solveSlider(
     page: Page,
     plan: SliderPlan,
-    vw: number,
-    vh: number
+    map: CaptchaRegion,
+    log: (msg: string) => void
   ): Promise<void> {
+    // 缺口在页面上的绝对坐标
+    const gapPageX = map.x + (plan.gapX / 100) * map.width;
+
     // 优先用真实的滑块 DOM 元素定位起点（比视觉估计更准）
     const sliderEl = await page.$('.geetest_slider_button, .geetest_btn_click');
     let startX: number;
     let startY: number;
-    if (sliderEl) {
-      const box = await sliderEl.boundingBox();
-      if (box) {
-        startX = box.x + box.width / 2;
-        startY = box.y + box.height / 2;
-      } else {
-        startX = (plan.sliderX / 100) * vw;
-        startY = (plan.sliderY / 100) * vh;
-      }
+    const elBox = sliderEl ? await sliderEl.boundingBox().catch(() => null) : null;
+    if (elBox) {
+      startX = elBox.x + elBox.width / 2;
+      startY = elBox.y + elBox.height / 2;
     } else {
-      startX = (plan.sliderX / 100) * vw;
-      startY = (plan.sliderY / 100) * vh;
+      startX = map.x + (plan.sliderX / 100) * map.width;
+      startY = map.y + (plan.sliderY / 100) * map.height;
     }
 
-    const distance = (plan.gapX / 100) * vw - startX;
+    const distance = gapPageX - startX;
     if (distance <= 0) {
-      this.log(`🤖 识别出的拖动距离异常（${distance.toFixed(1)}px），跳过本轮`);
+      log(`🤖 识别出的拖动距离异常（${distance.toFixed(1)}px），跳过本轮`);
       return;
     }
-    this.log(`🤖 滑块验证码：拖动距离 ${distance.toFixed(1)}px`);
+    log(`🤖 滑块验证码：拖动距离 ${distance.toFixed(1)}px`);
 
     await this.humanDrag(page, startX, startY, distance);
   }
@@ -290,17 +346,17 @@ export class CaptchaSolver {
   private async solveClick(
     page: Page,
     plan: ClickPlan,
-    vw: number,
-    vh: number
+    map: CaptchaRegion,
+    log: (msg: string) => void
   ): Promise<void> {
     if (!plan.points?.length) {
-      this.log('🤖 点选验证码：未识别到目标点');
+      log('🤖 点选验证码：未识别到目标点');
       return;
     }
-    this.log(`🤖 点选验证码：依次点击 ${plan.points.length} 个目标`);
+    log(`🤖 点选验证码：依次点击 ${plan.points.length} 个目标`);
     for (const pt of plan.points) {
-      const x = (pt.x / 100) * vw;
-      const y = (pt.y / 100) * vh;
+      const x = map.x + (pt.x / 100) * map.width;
+      const y = map.y + (pt.y / 100) * map.height;
       // 点击位置加微小随机偏移，避免每次都落在完全相同的像素
       await page.mouse.click(x + (Math.random() * 4 - 2), y + (Math.random() * 4 - 2));
       await page.waitForTimeout(400 + Math.random() * 400);
@@ -353,7 +409,7 @@ export class CaptchaSolver {
   /**
    * 调用通义千问视觉模型（DashScope OpenAI 兼容接口），解析返回的验证码操作方案
    */
-  private async askVisionModel(base64Jpeg: string): Promise<CaptchaPlan | null> {
+  private async askVisionModel(base64Jpeg: string, log?: (msg: string) => void): Promise<CaptchaPlan | null> {
     const { apiKey, baseURL, model } = this.resolveConfig();
     const resp = await fetch(`${baseURL}/chat/completions`, {
       method: 'POST',
@@ -361,6 +417,8 @@ export class CaptchaSolver {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
+      // 30 秒超时，防止代理挂起导致一直等待
+      signal: AbortSignal.timeout(30000),
       body: JSON.stringify({
         model,
         temperature: 0,
@@ -388,6 +446,7 @@ export class CaptchaSolver {
       choices?: { message?: { content?: string } }[];
     };
     const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+    log?.(`🤖 模型原始返回：${text.slice(0, 300)}${text.length > 300 ? '…' : ''}`);
     return this.parsePlan(text);
   }
 

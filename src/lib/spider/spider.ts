@@ -173,7 +173,9 @@ export class BeikeSpider {
             } else {
               this.log('[CAPTCHA_OK] ✓ 人机验证已通过，继续爬取', onProgress, totalSaved, pageNum, this.options.maxPage);
             }
-          }
+          },
+          // AI 求解过程的日志同步推送到前端面板
+          (msg) => this.log(msg, onProgress, totalSaved, pageNum, this.options.maxPage)
         );
         return houses;
       } catch (e) {
