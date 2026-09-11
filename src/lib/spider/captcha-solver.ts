@@ -322,6 +322,9 @@ export class CaptchaSolver {
       await this.solveClick(page, plan, map, log);
     }
 
+    // 操作完成后如出现「确定」按钮则点击提交（部分极验样式需要手动提交，不点等于没做）
+    await this.clickCommitIfPresent(page, log);
+
     // 等待验证结果生效，然后检查验证码元素是否已消失
     await page.waitForTimeout(VERIFY_WAIT_MS);
     for (const sel of captchaSelectors) {
@@ -430,6 +433,36 @@ export class CaptchaSolver {
   }
 
   /**
+   * 点击「确定/提交」按钮（如果存在且可见）
+   * 部分极验样式（尤其是点选）需要手动提交答案，不点不会触发服务端校验
+   */
+  private async clickCommitIfPresent(page: Page, log: (msg: string) => void): Promise<void> {
+    const COMMIT_SELECTORS = [
+      '.geetest_commit',
+      '.geetest_commit_tip',
+      'a.geetest_commit',
+      'div[aria-label="确定"]',
+      'text=确 定',
+      'text=确定',
+    ];
+    // 稍等片刻让按钮渲染出来
+    await page.waitForTimeout(400);
+    for (const sel of COMMIT_SELECTORS) {
+      const el = await page.$(sel);
+      if (!el) continue;
+      const visible = await el.isVisible().catch(() => false);
+      if (!visible) continue;
+      try {
+        await el.click();
+        log('🤖 已点击「确定」提交验证');
+        return;
+      } catch {
+        // 点不动就试下一个选择器
+      }
+    }
+  }
+
+  /**
    * 点选验证码：按顺序点击目标坐标
    */
   private async solveClick(
@@ -449,11 +482,6 @@ export class CaptchaSolver {
       // 点击位置加微小随机偏移，避免每次都落在完全相同的像素
       await page.mouse.click(x + (Math.random() * 4 - 2), y + (Math.random() * 4 - 2));
       await page.waitForTimeout(400 + Math.random() * 400);
-    }
-    // 点选完成后通常需要点击「确认」按钮
-    const confirmBtn = await page.$('.geetest_commit, .geetest_commit_tip');
-    if (confirmBtn) {
-      await confirmBtn.click().catch(() => {});
     }
   }
 
