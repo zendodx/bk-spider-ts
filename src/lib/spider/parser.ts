@@ -215,13 +215,16 @@ export class HouseParser {
     const solver = getCaptchaSolver();
     if (solver.isEnabled()) {
       onLog?.('⚠️ 检测到人机验证，尝试 AI 自动通过...');
+      // AI 求解依赖页面截图：最小化的窗口 Chromium 不产出渲染帧，截图会超时，必须先唤出窗口
+      await setWindowVisible(page, true);
       const solvedByAI = await solver.trySolve(page, CAPTCHA_SELECTORS, onLog);
       if (solvedByAI) {
         await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await setWindowVisible(page, false); // AI 通过：窗口重新最小化
         onCaptcha?.(true);
         return;
       }
-      // AI 失败 → 立刻回退人工（不再重试 AI）
+      // AI 失败 → 立刻回退人工（窗口保持可见）
     } else {
       onLog?.('💡 未配置 AI 识别（系统设置 → AI 验证码识别），直接进入人工接管');
     }

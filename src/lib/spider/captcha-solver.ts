@@ -255,6 +255,7 @@ export class CaptchaSolver {
     const screenshot = await page.screenshot({
       type: 'jpeg',
       quality: 95,
+      timeout: 15000, // 快速失败，避免占满整轮尝试时间
       ...(region ? { clip: region } : {}),
     });
     const base64 = screenshot.toString('base64');
