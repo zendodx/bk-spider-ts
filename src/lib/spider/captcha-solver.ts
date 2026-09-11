@@ -50,21 +50,34 @@ const VISION_PROMPT = `你是验证码分析助手。请分析这张网页截图
   "gapX": 缺口（拼图需要拖到的目标位置）中心的水平坐标，仅 slider 时需要,
   "sliderX": 滑块按钮中心的水平坐标，仅 slider 时需要,
   "sliderY": 滑块按钮中心的垂直坐标，仅 slider 时需要,
-  "points": [{"x": 水平坐标, "y": 垂直坐标, "text": "该点的文字/图标内容"}]  候选文字/图标，仅 click 时需要,
-  "hint": "顶部提示语要求依次点击的目标文字（仅 click 且存在提示语时必填，否则为空字符串）"
+  "points": [{"x": 水平坐标, "y": 垂直坐标, "text": "该点的文字内容（图标/手势则留空）"}]  候选目标，仅 click 时需要,
+  "hint": "顶部提示语要求依次点击的目标文字（仅文字类必填，否则为空字符串）",
+  "hintKind": "text" | "icon"   // 仅 click 时需要：候选目标是汉字还是手势/图标图案
 }
 
 判断规则：
 - 截图中有"滑块拼图"（一个可拖动的滑块按钮 + 带缺口凹槽的背景图）→ type = "slider"
 - 截图中要求"按顺序/按语序点击文字或图标"→ type = "click"。此时：
-  1. 如果顶部有提示语（如"请在下图依次点击 酿枇杷"），把提示语中要求点击的目标文字填入 hint 字段（只填目标文字本身，如 "酿枇杷"，不要包含"请点击"等字样）；
-  2. 识别出下方图片区域中所有候选文字/图标的内容和中心位置（不要把顶部提示语当作候选点）；
-  3. 每个点必须带 text 字段记录该位置的文字；
-  4. 只输出候选文字/图标本身，不要输出提示语、「确定」按钮等其他元素；
-  5. 不需要你排序，points 按任意顺序返回即可，排序由后续程序完成。
+  1. 识别出下方图片区域中所有候选文字/图标的中心位置（不要把顶部提示语当作候选点）；
+  2. 如果候选是汉字：hintKind="text"，每个点带 text 字段，hint 填提示语中的目标文字（如提示语"请在下图依次点击 酿枇杷"则 hint="酿枇杷"，不含"请点击"等字样）；如果提示语只是"请按语序依次点击"这类没有给出具体目标文字的，hint 必须留空；
+  3. 如果候选是手势/图标图案：hintKind="icon"，text 和 hint 留空，排序由后续程序处理；
+  4. 只输出候选本身，不要输出提示语、「确定」按钮等其他元素；
+  5. 不需要你排序，points 按任意顺序返回即可。
 - 截图中没有验证码、或验证码图片区域还是空白未加载出来 → type = "none"
 
 所有坐标一律用占图片宽/高的百分比表示（0-100，保留 1 位小数），取值绝不能超过 100。`;
+
+/** 手势/图标验证码的元素定位提示词（第二阶段：框出提示条和每个候选图案） */
+const ICON_LOCATE_PROMPT = `这是一张点选验证码截图。顶部提示语右侧有一排提示图案（线稿手势/图标），下方大图中散布着若干彩色图案。
+返回 JSON（只返回 JSON 本身，不要 markdown 代码块）：
+{
+  "hintBox": {"x": 0, "y": 0, "w": 0, "h": 0},
+  "hintCount": 提示图案个数,
+  "icons": [{"x": 0, "y": 0, "w": 0, "h": 0}]
+}
+- hintBox：整排提示图案的外接框（不要包含"请依次点击"等文字）
+- icons：大图中每个彩色图案的外接框，框要紧贴图案边缘
+- 所有坐标/尺寸为占图片宽/高的百分比（0-100），取值不超过 100`;
 
 interface SliderPlan {
   type: 'slider';
@@ -78,6 +91,8 @@ interface ClickPlan {
   points: { x: number; y: number; text?: string }[];
   /** 顶部提示语要求依次点击的目标文字（如 "酿枇杷"），无提示语时为 undefined */
   hint?: string;
+  /** 候选目标是汉字还是手势/图标图案（icon 时走图像比对排序） */
+  hintKind?: 'text' | 'icon';
 }
 
 interface NonePlan {
@@ -341,7 +356,14 @@ export class CaptchaSolver {
     if (plan.type === 'slider') {
       await this.solveSlider(page, plan, map, log);
     } else {
-      const sortedPoints = await this.orderClickPoints(plan.points, plan.hint, log);
+      // 手势/图标类：VL 命名不可靠，改用「裁剪图像两两比对」确定顺序；失败退回文字排序逻辑
+      let sortedPoints: ClickPlan['points'] | null = null;
+      if (plan.hintKind === 'icon') {
+        sortedPoints = await this.matchIconOrder(page, map, log);
+      }
+      if (!sortedPoints) {
+        sortedPoints = await this.orderClickPoints(plan.points, plan.hint, log);
+      }
       await this.solveClick(page, { ...plan, points: sortedPoints }, map, log);
     }
 
@@ -498,6 +520,139 @@ export class CaptchaSolver {
   }
 
   /**
+   * 手势/图标点选验证码：通过「裁剪图像两两比对」确定点击顺序。
+   *
+   * 为什么不用文字描述：VL 对手势的命名不稳定（同一手势可能叫"点赞"也可能叫"竖拇指"），
+   * 但 VL 做"这两张图是不是同一个手势"的视觉比对要可靠得多。
+   *
+   * 流程：定位提示条与候选图案的外接框 → 分别裁剪 → 每个候选与提示条比对得到编号 →
+   * 按提示编号顺序输出点击点。任一步失败返回 null，调用方退回文字排序逻辑。
+   */
+  private async matchIconOrder(
+    page: Page,
+    map: CaptchaRegion,
+    log: (msg: string) => void
+  ): Promise<{ x: number; y: number }[] | null> {
+    try {
+      // 1. 重截一张当前面板图，让 VL 框出提示条和所有候选图案
+      const shot = await page.screenshot({ type: 'jpeg', quality: 95, timeout: 15000, clip: map });
+      const located = await this.locateIcons(shot.toString('base64'));
+      if (!located || located.hintCount < 1) {
+        log('🤖 手势定位失败，退回文字排序逻辑');
+        return null;
+      }
+      log(`🤖 手势定位：${located.hintCount} 个提示图案，${located.icons.length} 个候选图案`);
+
+      // 百分比框 → 页面 CSS 像素 clip（带少量外扩，避免图案被裁掉边缘）
+      const toClip = (b: { x: number; y: number; w: number; h: number }, padPct = 2) => ({
+        x: Math.max(0, map.x + ((b.x - padPct) / 100) * map.width),
+        y: Math.max(0, map.y + ((b.y - padPct) / 100) * map.height),
+        width: ((b.w + padPct * 2) / 100) * map.width,
+        height: ((b.h + padPct * 2) / 100) * map.height,
+      });
+
+      const hintShot = await page.screenshot({ type: 'jpeg', quality: 95, timeout: 15000, clip: toClip(located.hintBox) });
+      const hintB64 = hintShot.toString('base64');
+
+      // 2. 每个候选图案与提示条比对，得到它对应第几个提示
+      const matched: { hintIndex: number; cx: number; cy: number }[] = [];
+      for (let i = 0; i < located.icons.length; i++) {
+        const icon = located.icons[i];
+        const iconShot = await page.screenshot({ type: 'jpeg', quality: 95, timeout: 15000, clip: toClip(icon) });
+        const hintIndex = await this.matchIconToHint(hintB64, iconShot.toString('base64'), located.hintCount);
+        log(
+          `🤖 候选图案 #${i + 1}（中心 ${icon.x + icon.w / 2},${icon.y + icon.h / 2}）→ 匹配提示 #${hintIndex || '无'}`
+        );
+        if (hintIndex >= 1) {
+          matched.push({ hintIndex, cx: icon.x + icon.w / 2, cy: icon.y + icon.h / 2 });
+        }
+      }
+
+      // 3. 按提示顺序消耗式取点；任何一个提示没有对应候选则整体放弃
+      const remaining = [...matched];
+      const ordered: { x: number; y: number }[] = [];
+      for (let h = 1; h <= located.hintCount; h++) {
+        const idx = remaining.findIndex(m => m.hintIndex === h);
+        if (idx === -1) {
+          log(`🤖 提示 #${h} 未匹配到候选图案，退回文字排序逻辑`);
+          return null;
+        }
+        const m = remaining.splice(idx, 1)[0];
+        ordered.push({ x: m.cx, y: m.cy });
+      }
+      log(`🤖 手势比对排序完成：${ordered.map(p => `(${p.x},${p.y})`).join(' → ')}`);
+      return ordered;
+    } catch (e) {
+      log(`🤖 手势图标匹配异常，退回文字排序逻辑（${e instanceof Error ? e.message : e}）`);
+      return null;
+    }
+  }
+
+  /** 手势定位：让 VL 框出提示条和每个候选图案（百分比坐标） */
+  private async locateIcons(base64Jpeg: string): Promise<{
+    hintBox: { x: number; y: number; w: number; h: number };
+    hintCount: number;
+    icons: { x: number; y: number; w: number; h: number }[];
+  } | null> {
+    const { text } = await this.postVision([
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` } },
+      { type: 'text', text: ICON_LOCATE_PROMPT },
+    ]);
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    try {
+      const obj = JSON.parse(m[0]);
+      if (!obj.hintBox || !Array.isArray(obj.icons) || obj.icons.length === 0) return null;
+      const boxes = [obj.hintBox, ...obj.icons];
+      const all = boxes.flatMap((b: { x?: number; y?: number; w?: number; h?: number }) => [b?.x, b?.y, b?.w, b?.h]);
+      if (all.some((v: unknown) => typeof v !== 'number')) return null;
+      const scale = detectScale(all as number[]);
+      const norm = (b: { x: number; y: number; w: number; h: number }) => ({
+        x: b.x / scale,
+        y: b.y / scale,
+        w: b.w / scale,
+        h: b.h / scale,
+      });
+      return {
+        hintBox: norm(obj.hintBox),
+        hintCount:
+          typeof obj.hintCount === 'number' && obj.hintCount >= 1 ? Math.round(obj.hintCount) : obj.icons.length,
+        icons: obj.icons.map(norm),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 图案比对：给 VL 两张图（提示条 + 单个候选图案），判断候选对应提示条中第几个。
+   * 返回 1..hintCount，无法匹配返回 0。
+   */
+  private async matchIconToHint(hintB64: string, iconB64: string, hintCount: number): Promise<number> {
+    const { text } = await this.postVision(
+      [
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${hintB64}` } },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${iconB64}` } },
+        {
+          type: 'text',
+          text: `第一张图是验证码顶部的一排提示图案，从左到右编号 1 到 ${hintCount}。第二张图是验证码大图中的一个彩色图案。
+判断第二张图的图案与第一张中第几个是同一个（颜色、大小、旋转角度可能不同，只比较形状/手势含义）。
+返回 JSON（只返回 JSON）：{"match": 编号}；都不相同返回 {"match": 0}`,
+        },
+      ],
+      50
+    );
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return 0;
+    try {
+      const n = JSON.parse(m[0]).match;
+      return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= hintCount ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
    * 点选目标排序，三级策略：
    * 1. 有提示语（如"请依次点击 酿枇杷"）→ 本地精确匹配排序，最可靠；
    * 2. 无提示语（需自己组句）→ 纯文本 LLM 组句排序；
@@ -552,14 +707,92 @@ export class CaptchaSolver {
     if (points.length < 2 || points.some(p => !p.text)) return points;
 
     const chars = points.map(p => p.text as string);
+    // 无提示语（组句型）走短语输出 + 本地校验；有提示语仍走下标排序
+    return hint ? this.sortByHintWithLLM(points, hint, chars, log) : this.sortByPhraseWithLLM(points, chars, log);
+  }
+
+  /**
+   * 组句型（"请按语序依次点击"，无目标提示）：
+   * 让 LLM 直接输出组成的短语文字（如「泡好茶水」），而不是下标排列——
+   * 组句是 LLM 的强项，数下标不是。短语由程序校验「用字与识别结果完全一致」
+   * （多重集合相等），再用消耗式匹配映射回坐标点，计数和映射都由程序保证。
+   */
+  private async sortByPhraseWithLLM(
+    points: { x: number; y: number; text?: string }[],
+    chars: string[],
+    log: (msg: string) => void
+  ): Promise<{ x: number; y: number; text?: string }[]> {
     const { apiKey, baseURL, model } = this.resolveConfig();
-    const prompt = hint
-      ? `这是一组从验证码图片中识别出的汉字：${JSON.stringify(chars)}
+    const prompt = `这是一组从验证码图片中识别出的汉字（顺序已打乱）：${JSON.stringify(chars)}
+验证码要求"按语序依次点击"，即这 ${chars.length} 个汉字能组成一句通顺的话。
+规则：
+- 必须恰好使用全部 ${chars.length} 个汉字，每个字用且只用一次，不能增删替换任何字；
+- 这类题目的答案绝大多数是「动词 + 名词」的动宾结构（或两个动宾词组连用）。先找出字里的动词，再把它支配的名词/宾语跟在后面；
+- 参考示例（打乱的字 → 正确答案）：
+  ["收","好","彩","笔"] → 收好彩笔（动词"收"+ 名词"彩笔"）
+  ["餐","摆","套","具"] → 摆好餐具（动词"摆"+ 名词"餐具"）
+  ["开","门","推","柜"] → 开门推柜（动宾"开门"+ 动宾"推柜"）
+  ["节","约","用","电"] → 节约用电（动词"节约"+ 宾语"用电"）
+  ["泡","茶","好","水"] → 好水泡茶（"好水"修饰，动词"泡"+ 名词"茶"）
+  ["保","护","环","境"] → 保护环境
+返回 JSON（只返回 JSON 本身）：{"phrase": "组成的短语"}`;
+
+    try {
+      const resp = await fetch(`${baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 100,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = (await resp.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('返回中未找到 JSON');
+      const phrase = String(JSON.parse(m[0]).phrase ?? '').replace(/[\s，。、,.!！?？「」]/g, '');
+      // 校验：短语用字必须与识别用字构成相同的多重集合（每个字用且只用一次）
+      const phraseChars = [...phrase];
+      const sameMultiset = (a: string[], b: string[]) => [...a].sort().join('\n') === [...b].sort().join('\n');
+      if (!phrase || !sameMultiset(phraseChars, chars)) {
+        throw new Error(`短语「${phrase}」用字与识别结果 ${JSON.stringify(chars)} 不一致`);
+      }
+      // 消耗式映射回坐标点
+      const remaining = [...points];
+      const sorted: typeof points = [];
+      for (const ch of phraseChars) {
+        const idx = remaining.findIndex(p => p.text && [...p.text].includes(ch));
+        if (idx === -1) throw new Error(`短语中的「${ch}」找不到对应点`);
+        sorted.push(remaining.splice(idx, 1)[0]);
+      }
+      log(`🤖 语序排序：${chars.join('')} → ${phrase}`);
+      return sorted;
+    } catch (e) {
+      log(`🤖 语序排序失败，按原顺序点击（${e instanceof Error ? e.message : e}）`);
+      return points;
+    }
+  }
+
+  /** 提示语型降级：本地精确匹配失败时，让 LLM 按下标给出与提示对应的点击顺序 */
+  private async sortByHintWithLLM(
+    points: { x: number; y: number; text?: string }[],
+    hint: string,
+    chars: string[],
+    log: (msg: string) => void
+  ): Promise<{ x: number; y: number; text?: string }[]> {
+    const { apiKey, baseURL, model } = this.resolveConfig();
+    const prompt = `这是一组从验证码图片中识别出的汉字：${JSON.stringify(chars)}
 验证码提示要求依次点击「${hint}」。请返回这些字中与提示对应的点击顺序。
-返回 JSON（只返回 JSON 本身）：{"order": [按点击顺序排列的原数组下标]}，例如 {"order": [2, 0, 3, 1]}`
-      : `这是一组从验证码图片中识别出的汉字（顺序已打乱）：${JSON.stringify(chars)}
-请把它们排列成一个通顺、常见的中文词语/短语/标语（例如“节约用电”“开门推柜”这类日常表达）。
-返回 JSON（只返回 JSON 本身）：{"order": [按正确语序排列的原数组下标]}，例如 {"order": [2, 0, 3, 1]}`;
+返回 JSON（只返回 JSON 本身）：{"order": [按点击顺序排列的原数组下标]}，例如 {"order": [2, 0, 3, 1]}`;
 
     try {
       const resp = await fetch(`${baseURL}/chat/completions`, {
@@ -665,10 +898,11 @@ export class CaptchaSolver {
     await page.mouse.up();
   }
 
-  /**
-   * 调用通义千问视觉模型（DashScope OpenAI 兼容接口），解析返回的验证码操作方案
-   */
-  private async askVisionModel(base64Jpeg: string, log?: (msg: string) => void): Promise<CaptchaPlan | null> {
+  /** 视觉模型的通用请求：发送图文内容，返回原始文本与耗时 */
+  private async postVision(
+    content: ({ type: 'image_url'; image_url: { url: string } } | { type: 'text'; text: string })[],
+    maxTokens?: number
+  ): Promise<{ text: string; latencyMs: number }> {
     const { apiKey, baseURL, model } = this.resolveConfig();
     const reqStart = Date.now();
     const resp = await fetch(`${baseURL}/chat/completions`, {
@@ -682,18 +916,8 @@ export class CaptchaSolver {
       body: JSON.stringify({
         model,
         temperature: 0,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` },
-              },
-              { type: 'text', text: VISION_PROMPT },
-            ],
-          },
-        ],
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+        messages: [{ role: 'user', content }],
       }),
     });
 
@@ -705,8 +929,21 @@ export class CaptchaSolver {
     const data = (await resp.json()) as {
       choices?: { message?: { content?: string } }[];
     };
-    const text = data.choices?.[0]?.message?.content?.trim() ?? '';
-    log?.(`🤖 模型原始返回（耗时 ${((Date.now() - reqStart) / 1000).toFixed(1)}s）：${text.slice(0, 300)}${text.length > 300 ? '…' : ''}`);
+    return { text: data.choices?.[0]?.message?.content?.trim() ?? '', latencyMs: Date.now() - reqStart };
+  }
+
+  /**
+   * 调用通义千问视觉模型（DashScope OpenAI 兼容接口），解析返回的验证码操作方案
+   */
+  private async askVisionModel(base64Jpeg: string, log?: (msg: string) => void): Promise<CaptchaPlan | null> {
+    const { text, latencyMs } = await this.postVision([
+      {
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` },
+      },
+      { type: 'text', text: VISION_PROMPT },
+    ]);
+    log?.(`🤖 模型原始返回（耗时 ${(latencyMs / 1000).toFixed(1)}s）：${text.slice(0, 300)}${text.length > 300 ? '…' : ''}`);
     return this.parsePlan(text);
   }
 
@@ -734,6 +971,7 @@ const scale = detectScale(pts.flatMap((p: { x: number; y: number }) => [p.x, p.y
 return {
 type: 'click',
 hint: typeof obj.hint === 'string' && obj.hint.trim() ? obj.hint.trim() : undefined,
+hintKind: obj.hintKind === 'icon' ? ('icon' as const) : ('text' as const),
 points: pts.map((p: { x: number; y: number; text?: string }) => ({
 x: p.x / scale,
             y: p.y / scale,
