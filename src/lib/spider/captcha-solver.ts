@@ -34,7 +34,7 @@ export const QWEN_VL_MODEL_PRESETS = [
 ];
 
 /** AI 求解单次验证码的最大尝试轮数（每轮含一次截图识别 + 一次操作） */
-const AI_MAX_ATTEMPTS = 2;
+const AI_MAX_ATTEMPTS = 5;
 
 /** 操作完成后等待验证码组件消失的时间 */
 const VERIFY_WAIT_MS = 3000;
@@ -179,13 +179,47 @@ export class CaptchaSolver {
           log('🤖 AI 验证通过 ✓');
           return true;
         }
+        // 本轮失败：刷新验证码换一张新题再试（最后一轮不用刷）
+        if (attempt < AI_MAX_ATTEMPTS) {
+          await this.refreshCaptcha(page, log);
+        }
       } catch (e) {
         log(`🤖 AI 识别异常: ${e instanceof Error ? e.message : e}`);
+        await this.refreshCaptcha(page, log).catch(() => {});
       }
     }
 
-    log('🤖 AI 未能通过验证，转人工处理');
+    log(`🤖 AI 尝试 ${AI_MAX_ATTEMPTS} 次均未通过，转人工处理`);
     return false;
+  }
+
+  /**
+   * 点击极验的「刷新」按钮换一张新题
+   * 验证失败后旧拼图通常已失效，需要刷新出新题再识别
+   */
+  private async refreshCaptcha(page: Page, log: (msg: string) => void): Promise<void> {
+    const REFRESH_SELECTORS = [
+      '.geetest_refresh',
+      '.geetest_refresh_tip',
+      'div[aria-label="刷新"]',
+      'text=刷新',
+    ];
+    for (const sel of REFRESH_SELECTORS) {
+      const el = await page.$(sel);
+      if (!el) continue;
+      const visible = await el.isVisible().catch(() => false);
+      if (!visible) continue;
+      try {
+        await el.click();
+        log('🤖 已刷新验证码，获取新题');
+        await page.waitForTimeout(1200 + Math.random() * 600); // 等新题加载
+        return;
+      } catch {
+        // 点不动就试下一个选择器
+      }
+    }
+    // 没找到刷新按钮：等一下让极验自动换题
+    await page.waitForTimeout(1500);
   }
 
   /**
