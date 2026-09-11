@@ -50,12 +50,18 @@ const VISION_PROMPT = `你是验证码分析助手。请分析这张网页截图
   "gapX": 缺口（拼图需要拖到的目标位置）中心的水平坐标，仅 slider 时需要,
   "sliderX": 滑块按钮中心的水平坐标，仅 slider 时需要,
   "sliderY": 滑块按钮中心的垂直坐标，仅 slider 时需要,
-  "points": [{"x": 水平坐标, "y": 垂直坐标}]  需要依次点击的目标文字/图标中心坐标，仅 click 时需要
+  "points": [{"x": 水平坐标, "y": 垂直坐标, "text": "该点的文字/图标内容"}]  候选文字/图标，仅 click 时需要,
+  "hint": "顶部提示语要求依次点击的目标文字（仅 click 且存在提示语时必填，否则为空字符串）"
 }
 
 判断规则：
 - 截图中有"滑块拼图"（一个可拖动的滑块按钮 + 带缺口凹槽的背景图）→ type = "slider"
-- 截图中要求"按顺序/按语序点击文字或图标"→ type = "click"，注意：points 必须按照题目要求的正确语序/顺序排列，点击顺序就是数组顺序
+- 截图中要求"按顺序/按语序点击文字或图标"→ type = "click"。此时：
+  1. 如果顶部有提示语（如"请在下图依次点击 酿枇杷"），把提示语中要求点击的目标文字填入 hint 字段（只填目标文字本身，如 "酿枇杷"，不要包含"请点击"等字样）；
+  2. 识别出下方图片区域中所有候选文字/图标的内容和中心位置（不要把顶部提示语当作候选点）；
+  3. 每个点必须带 text 字段记录该位置的文字；
+  4. 只输出候选文字/图标本身，不要输出提示语、「确定」按钮等其他元素；
+  5. 不需要你排序，points 按任意顺序返回即可，排序由后续程序完成。
 - 截图中没有验证码、或验证码图片区域还是空白未加载出来 → type = "none"
 
 所有坐标一律用占图片宽/高的百分比表示（0-100，保留 1 位小数），取值绝不能超过 100。`;
@@ -69,7 +75,9 @@ interface SliderPlan {
 
 interface ClickPlan {
   type: 'click';
-  points: { x: number; y: number }[];
+  points: { x: number; y: number; text?: string }[];
+  /** 顶部提示语要求依次点击的目标文字（如 "酿枇杷"），无提示语时为 undefined */
+  hint?: string;
 }
 
 interface NonePlan {
@@ -333,7 +341,8 @@ export class CaptchaSolver {
     if (plan.type === 'slider') {
       await this.solveSlider(page, plan, map, log);
     } else {
-      await this.solveClick(page, plan, map, log);
+      const sortedPoints = await this.orderClickPoints(plan.points, plan.hint, log);
+      await this.solveClick(page, { ...plan, points: sortedPoints }, map, log);
     }
 
     // 操作完成后如出现「确定」按钮则点击提交（部分极验样式需要手动提交，不点等于没做）
@@ -489,6 +498,112 @@ export class CaptchaSolver {
   }
 
   /**
+   * 点选目标排序，三级策略：
+   * 1. 有提示语（如"请依次点击 酿枇杷"）→ 本地精确匹配排序，最可靠；
+   * 2. 无提示语（需自己组句）→ 纯文本 LLM 组句排序；
+   * 3. 都失败 → 保持 VL 返回的原顺序。
+   */
+  private async orderClickPoints(
+    points: { x: number; y: number; text?: string }[],
+    hint: string | undefined,
+    log: (msg: string) => void
+  ): Promise<{ x: number; y: number; text?: string }[]> {
+    if (hint) {
+      const byHint = this.orderPointsByHint(points, hint);
+      if (byHint) {
+        log(`🤖 按提示语「${hint}」排序：${byHint.map(p => p.text).join(' → ')}`);
+        return byHint;
+      }
+      log(`🤖 提示语「${hint}」与识别结果不完全匹配，改用语义排序`);
+    }
+    return this.sortClickPointsByLLM(points, hint, log);
+  }
+
+  /**
+   * 按提示语本地精确排序：依次在候选点中查找与提示语每个字匹配的点（消耗式匹配，支持重复字）。
+   * 提示语中任何一个字找不到对应点，则返回 null 交给 LLM 排序。
+   */
+  private orderPointsByHint(
+    points: { x: number; y: number; text?: string }[],
+    hint: string
+  ): { x: number; y: number; text?: string }[] | null {
+    const chars = [...hint.replace(/\s/g, '')];
+    if (chars.length === 0) return null;
+    const remaining = [...points];
+    const ordered: typeof points = [];
+    for (const ch of chars) {
+      const idx = remaining.findIndex(p => p.text && [...p.text].includes(ch));
+      if (idx === -1) return null;
+      ordered.push(remaining.splice(idx, 1)[0]);
+    }
+    return ordered;
+  }
+
+  /**
+   * 用语义模型对点选目标排序：
+   * VL 模型识別文字和位置很准，但把散字组成通顺短语（语序）不可靠，
+   * 因此排序单独用一次纯文本调用完成。失败时保持原顺序。
+   */
+  private async sortClickPointsByLLM(
+    points: { x: number; y: number; text?: string }[],
+    hint: string | undefined,
+    log: (msg: string) => void
+  ): Promise<{ x: number; y: number; text?: string }[]> {
+    if (points.length < 2 || points.some(p => !p.text)) return points;
+
+    const chars = points.map(p => p.text as string);
+    const { apiKey, baseURL, model } = this.resolveConfig();
+    const prompt = hint
+      ? `这是一组从验证码图片中识别出的汉字：${JSON.stringify(chars)}
+验证码提示要求依次点击「${hint}」。请返回这些字中与提示对应的点击顺序。
+返回 JSON（只返回 JSON 本身）：{"order": [按点击顺序排列的原数组下标]}，例如 {"order": [2, 0, 3, 1]}`
+      : `这是一组从验证码图片中识别出的汉字（顺序已打乱）：${JSON.stringify(chars)}
+请把它们排列成一个通顺、常见的中文词语/短语/标语（例如“节约用电”“开门推柜”这类日常表达）。
+返回 JSON（只返回 JSON 本身）：{"order": [按正确语序排列的原数组下标]}，例如 {"order": [2, 0, 3, 1]}`;
+
+    try {
+      const resp = await fetch(`${baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 100,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = (await resp.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('返回中未找到 JSON');
+      const order = JSON.parse(m[0]).order;
+      // 校验必须是 0..n-1 的一个排列，否则不信任排序结果
+      const isValidPermutation =
+        Array.isArray(order) &&
+        order.length === points.length &&
+        order.every((i: unknown) => typeof i === 'number' && Number.isInteger(i)) &&
+        new Set(order).size === points.length &&
+        Math.min(...order) === 0 &&
+        Math.max(...order) === points.length - 1;
+      if (!isValidPermutation) throw new Error(`order 不是有效排列: ${text.slice(0, 100)}`);
+
+      const sorted = order.map((i: number) => points[i]);
+      log(`🤖 语序排序：${chars.join('')} → ${sorted.map(p => p.text).join('')}`);
+      return sorted;
+    } catch (e) {
+      log(`🤖 语序排序失败，按原顺序点击（${e instanceof Error ? e.message : e}）`);
+      return points;
+    }
+  }
+
+  /**
    * 点选验证码：按顺序点击目标坐标
    */
   private async solveClick(
@@ -501,7 +616,8 @@ export class CaptchaSolver {
       log('🤖 点选验证码：未识别到目标点');
       return;
     }
-    log(`🤖 点选验证码：依次点击 ${plan.points.length} 个目标`);
+    const orderDesc = plan.points.map(p => p.text || `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' → ');
+    log(`🤖 点选验证码：依次点击 ${plan.points.length} 个目标，顺序：${orderDesc}`);
     for (const pt of plan.points) {
       const x = map.x + (pt.x / 100) * map.width;
       const y = map.y + (pt.y / 100) * map.height;
@@ -609,15 +725,20 @@ export class CaptchaSolver {
           sliderY: typeof obj.sliderY === 'number' ? obj.sliderY / scale : 50,
         };
       }
-      if (obj.type === 'click' && Array.isArray(obj.points) && obj.points.length > 0) {
-        const pts = obj.points.filter(
-          (p: { x?: number; y?: number }) => typeof p?.x === 'number' && typeof p?.y === 'number'
-        );
-        if (pts.length === 0) return { type: 'none' };
-        const scale = detectScale(pts.flatMap((p: { x: number; y: number }) => [p.x, p.y]));
-        return {
-          type: 'click',
-          points: pts.map((p: { x: number; y: number }) => ({ x: p.x / scale, y: p.y / scale })),
+if (obj.type === 'click' && Array.isArray(obj.points) && obj.points.length > 0) {
+const pts = obj.points.filter(
+(p: { x?: number; y?: number }) => typeof p?.x === 'number' && typeof p?.y === 'number'
+);
+if (pts.length === 0) return { type: 'none' };
+const scale = detectScale(pts.flatMap((p: { x: number; y: number }) => [p.x, p.y]));
+return {
+type: 'click',
+hint: typeof obj.hint === 'string' && obj.hint.trim() ? obj.hint.trim() : undefined,
+points: pts.map((p: { x: number; y: number; text?: string }) => ({
+x: p.x / scale,
+            y: p.y / scale,
+            text: typeof p.text === 'string' ? p.text : undefined,
+          })),
         };
       }
       return { type: 'none' };
