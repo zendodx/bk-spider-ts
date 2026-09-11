@@ -27,6 +27,12 @@ interface AppSettings {
   dbPath: string;
   /** 城市名 -> HOST URL 映射，支持自定义 */
   cityHostMap: Record<string, string>;
+  /** AI 验证码求解：通义千问 API Key（空则禁用 AI 求解） */
+  qwenApiKey: string;
+  /** AI 验证码求解：视觉模型名称 */
+  qwenModel: string;
+  /** AI 验证码求解：OpenAI 兼容接口地址 */
+  qwenBaseUrl: string;
 }
 
 const DEFAULT_CITY_HOST_MAP: Record<string, string> = {
@@ -57,6 +63,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   dataDir: path.join(os.homedir(), 'bk_spider_data', '采集数据'),
   dbPath: path.join(os.homedir(), 'bk_spider_data', 'bk_spider.db'),
   cityHostMap: DEFAULT_CITY_HOST_MAP,
+  qwenApiKey: '',
+  qwenModel: 'qwen-vl-max-latest',
+  qwenBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 };
 
 export async function GET() {

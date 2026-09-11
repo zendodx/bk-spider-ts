@@ -18,7 +18,20 @@ interface Settings {
   dataDir: string;
   dbPath: string;
   cityHostMap: Record<string, string>;
+  qwenApiKey: string;
+  qwenModel: string;
+  qwenBaseUrl: string;
 }
+
+/** 可选的通义千问视觉模型（与 src/lib/spider/captcha-solver.ts 中的预设保持一致） */
+const QWEN_VL_MODEL_PRESETS = [
+  'qwen-vl-max-latest',
+  'qwen-vl-max',
+  'qwen-vl-plus-latest',
+  'qwen-vl-plus',
+  'qwen2.5-vl-72b-instruct',
+  'qwen2.5-vl-32b-instruct',
+];
 
 interface MappingEntry {
   name: string;
@@ -42,6 +55,9 @@ export default function SettingsPanel() {
     dataDir: '',
     dbPath: '',
     cityHostMap: {},
+    qwenApiKey: '',
+    qwenModel: 'qwen-vl-max-latest',
+    qwenBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   });
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [mappingEntries, setMappingEntries] = useState<MappingEntry[]>([]);
@@ -49,6 +65,11 @@ export default function SettingsPanel() {
   const [saved, setSaved] = useState(false);
   const [dbStatus, setDbStatus] = useState<{ testing: boolean; result: string | null }>({
     testing: false,
+    result: null,
+  });
+  const [qwenStatus, setQwenStatus] = useState<{ testing: boolean; ok: boolean | null; result: string | null }>({
+    testing: false,
+    ok: null,
     result: null,
   });
 
@@ -118,6 +139,26 @@ export default function SettingsPanel() {
       setDbStatus({ testing: false, result: data.message });
     } catch (e) {
       setDbStatus({ testing: false, result: `连接失败: ${e}` });
+    }
+  };
+
+  /** 测试 AI 模型连通性（使用当前表单中的值，无需先保存） */
+  const testQwenConnection = async () => {
+    setQwenStatus({ testing: true, ok: null, result: null });
+    try {
+      const res = await fetch('/api/settings/test-qwen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: settings.qwenApiKey || undefined,
+          model: settings.qwenModel || undefined,
+          baseUrl: settings.qwenBaseUrl || undefined,
+        }),
+      });
+      const data = await res.json();
+      setQwenStatus({ testing: false, ok: !!data.success, result: data.message });
+    } catch (e) {
+      setQwenStatus({ testing: false, ok: false, result: `请求失败: ${e}` });
     }
   };
 
@@ -295,6 +336,63 @@ export default function SettingsPanel() {
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-2">💡 提示：可直接编辑 HOST URL 输入框，修改完成后点击"保存设置"生效</p>
+        </section>
+
+        {/* AI 验证码识别 */}
+        <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <h3 className="text-sm font-bold text-gray-800 mb-1">🤖 AI 验证码识别</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            配置通义千问视觉模型后，爬虫遇到极验验证码会先由 AI 自动尝试通过，失败则回退人工接管。
+            API Key 请在阿里云百炼平台获取，留空则禁用此功能。
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">API Key（DashScope）</label>
+              <input
+                type="password"
+                value={settings.qwenApiKey}
+                onChange={e => setSettings(p => ({ ...p, qwenApiKey: e.target.value }))}
+                placeholder="sk-...（留空禁用 AI 识别）"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">视觉模型</label>
+              <input
+                type="text"
+                list="qwen-vl-models"
+                value={settings.qwenModel}
+                onChange={e => setSettings(p => ({ ...p, qwenModel: e.target.value }))}
+                placeholder="qwen-vl-max-latest"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <datalist id="qwen-vl-models">
+                {QWEN_VL_MODEL_PRESETS.map(m => <option key={m} value={m} />)}
+              </datalist>
+            </div>
+            <InputField
+              label="接口地址（OpenAI 兼容）" value={settings.qwenBaseUrl}
+              onChange={v => setSettings(p => ({ ...p, qwenBaseUrl: v }))}
+              placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            />
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button
+              onClick={testQwenConnection}
+              disabled={qwenStatus.testing}
+              className="px-4 py-2 text-sm bg-gray-700 text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-colors"
+            >
+              {qwenStatus.testing ? '测试中...' : '🔌 测试连通性'}
+            </button>
+            {qwenStatus.result && (
+              <span className={`text-sm ${
+                qwenStatus.ok ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {qwenStatus.result}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">💡 模型可输入预设值或任意 DashScope 支持的模型名，保存后下次遇到验证码即生效，无需重启</p>
         </section>
 
         {/* 小区映射管理 */}

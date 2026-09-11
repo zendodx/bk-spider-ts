@@ -7,6 +7,7 @@
 import { Page } from 'playwright';
 import { AdaptiveSpeedController, PageLoadOptimizer, sleep } from './speed-controller';
 import { setWindowVisible } from './driver';
+import { getCaptchaSolver } from './captcha-solver';
 
 export interface HouseRawData {
   头图: string | null;
@@ -171,7 +172,8 @@ export class HouseParser {
   /**
    * 单次检测验证码：
    * - 未发现验证码 → 立即返回
-   * - 发现验证码   → 阻塞等待人工完成（最长 5 分钟），完成后重新加载原页面
+   * - 发现验证码   → 先由 AI（通义千问视觉模型）尝试自动通过，失败则立即回退人工接管
+   *                  人工完成后重新加载原页面
    */
   private async handleCaptchaIfPresent(
     page: Page,
@@ -202,6 +204,20 @@ export class HouseParser {
 
     if (!found) return; // 无验证码，直接返回
 
+    // 阶段一：AI 尝试自动通过（未配置 QWEN_API_KEY 时自动跳过）
+    const solver = getCaptchaSolver();
+    if (solver.isEnabled()) {
+      console.log('⚠️ 检测到人机验证，尝试 AI 自动通过...');
+      const solvedByAI = await solver.trySolve(page, CAPTCHA_SELECTORS);
+      if (solvedByAI) {
+        await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        onCaptcha?.(true);
+        return;
+      }
+      // AI 失败 → 立刻回退人工（不再重试 AI）
+    }
+
+    // 阶段二：人工接管
     console.log('⚠️ 检测到人机验证，等待人工完成...');
     await setWindowVisible(page, true);  // 验证码出现：将窗口移回屏幕中央
     onCaptcha?.(false);
