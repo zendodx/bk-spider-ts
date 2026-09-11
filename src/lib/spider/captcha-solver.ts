@@ -250,6 +250,16 @@ export class CaptchaSolver {
     captchaSelectors: string[],
     log: (msg: string) => void
   ): Promise<boolean> {
+    // 贝壳验证页是「入口按钮」模式：先点「点击按钮开始验证」才弹出滑块/点选面板，
+    // 且风险低时点击后直接无感通过
+    await this.clickEntryButtonIfPresent(page, log);
+
+    // 入口点击后若无感通过（验证码元素已消失），直接成功
+    if (await this.isCaptchaGone(page, captchaSelectors)) {
+      log('🤖 点击入口按钮后无感通过 ✓');
+      return true;
+    }
+
     // 优先裁剪验证码容器区域截图（更高相对分辨率，VL 坐标更准），找不到容器则全页截图
     const region = await this.findCaptchaRegion(page);
     const screenshot = await page.screenshot({
@@ -284,6 +294,50 @@ export class CaptchaSolver {
       if (await page.$(sel)) return false; // 验证码仍在，本轮失败
     }
     return true;
+  }
+
+  /** 检查验证码元素是否已全部消失 */
+  private async isCaptchaGone(page: Page, captchaSelectors: string[]): Promise<boolean> {
+    for (const sel of captchaSelectors) {
+      if (await page.$(sel)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * 点击极验的「点击按钮开始验证」入口按钮（如果存在且可见）
+   * 用鼠标拟人点击而不是 el.click，避免被行为检测
+   */
+  private async clickEntryButtonIfPresent(page: Page, log: (msg: string) => void): Promise<void> {
+    const ENTRY_SELECTORS = [
+      '.geetest_btn_click',
+      '.geetest_radar_btn',
+      'text=点击按钮开始验证',
+      'text=开始验证',
+    ];
+    for (const sel of ENTRY_SELECTORS) {
+      const el = await page.$(sel);
+      if (!el) continue;
+      const visible = await el.isVisible().catch(() => false);
+      if (!visible) continue;
+      const box = await el.boundingBox().catch(() => null);
+      if (!box) continue;
+
+      log('🤖 检测到验证入口按钮，点击进入验证...');
+      const targetX = box.x + box.width / 2 + (Math.random() * 8 - 4);
+      const targetY = box.y + box.height / 2 + (Math.random() * 6 - 3);
+      await page.mouse.move(targetX - 40, targetY + 10, { steps: 6 });
+      await page.waitForTimeout(120 + Math.random() * 150);
+      await page.mouse.move(targetX, targetY, { steps: 4 });
+      await page.waitForTimeout(100 + Math.random() * 150);
+      await page.mouse.down();
+      await page.waitForTimeout(60 + Math.random() * 90);
+      await page.mouse.up();
+
+      // 等待验证面板加载（或无感通过后的组件移除）
+      await page.waitForTimeout(2000);
+      return;
+    }
   }
 
   /** 找到可见的验证码容器并返回其裁剪区域（四周留 20px 边距，限制在视口内） */
