@@ -55,10 +55,10 @@ const VISION_PROMPT = `你是验证码分析助手。请分析这张网页截图
 
 判断规则：
 - 截图中有"滑块拼图"（一个可拖动的滑块按钮 + 带缺口凹槽的背景图）→ type = "slider"
-- 截图中要求"按顺序点击文字/图标"→ type = "click"
-- 截图中没有验证码 → type = "none"
+- 截图中要求"按顺序/按语序点击文字或图标"→ type = "click"，注意：points 必须按照题目要求的正确语序/顺序排列，点击顺序就是数组顺序
+- 截图中没有验证码、或验证码图片区域还是空白未加载出来 → type = "none"
 
-所有坐标一律用占图片宽/高的百分比表示（0-100，保留 1 位小数）。`;
+所有坐标一律用占图片宽/高的百分比表示（0-100，保留 1 位小数），取值绝不能超过 100。`;
 
 interface SliderPlan {
   type: 'slider';
@@ -77,6 +77,15 @@ interface NonePlan {
 }
 
 type CaptchaPlan = SliderPlan | ClickPlan | NonePlan;
+
+/**
+ * 检测模型返回坐标的量纲并给出归一化除数：
+ * 提示词要求 0-100 百分比，但 Qwen-VL 系列经常返回 0-1000 的千分比坐标；
+ * 只要任一坐标超过 100，就按千分比处理（除以 10 归一到百分比）。
+ */
+function detectScale(values: (number | undefined)[]): number {
+  return values.some(v => typeof v === 'number' && v > 100) ? 10 : 1;
+}
 
 /** 验证码在页面上的实际区域（CSS 像素坐标），用于截图裁剪与坐标映射 */
 interface CaptchaRegion {
@@ -380,8 +389,15 @@ export class CaptchaSolver {
       await page.waitForTimeout(60 + Math.random() * 90);
       await page.mouse.up();
 
-      // 等待验证面板加载（或无感通过后的组件移除）
+      // 等待验证面板加载：先等 2 秒，再等题目内容元素出现（滑块轨道/点选图片/提示语），
+      // 避免截到空白面板（内容未加载时模型只能返回 none）
       await page.waitForTimeout(2000);
+      await page
+        .waitForSelector(
+          '.geetest_item_img, .geetest_canvas_bg, .geetest_ques_tips, .geetest_slider_track, .geetest_slider_button',
+          { timeout: 5000 }
+        )
+        .catch(() => {});
       return;
     }
   }
@@ -585,19 +601,23 @@ export class CaptchaSolver {
     try {
       const obj = JSON.parse(match[0]);
       if (obj.type === 'slider' && typeof obj.gapX === 'number') {
+        const scale = detectScale([obj.gapX, obj.sliderX, obj.sliderY]);
         return {
           type: 'slider',
-          gapX: obj.gapX,
-          sliderX: typeof obj.sliderX === 'number' ? obj.sliderX : 0,
-          sliderY: typeof obj.sliderY === 'number' ? obj.sliderY : 50,
+          gapX: obj.gapX / scale,
+          sliderX: typeof obj.sliderX === 'number' ? obj.sliderX / scale : 0,
+          sliderY: typeof obj.sliderY === 'number' ? obj.sliderY / scale : 50,
         };
       }
       if (obj.type === 'click' && Array.isArray(obj.points) && obj.points.length > 0) {
+        const pts = obj.points.filter(
+          (p: { x?: number; y?: number }) => typeof p?.x === 'number' && typeof p?.y === 'number'
+        );
+        if (pts.length === 0) return { type: 'none' };
+        const scale = detectScale(pts.flatMap((p: { x: number; y: number }) => [p.x, p.y]));
         return {
           type: 'click',
-          points: obj.points.filter(
-            (p: { x?: number; y?: number }) => typeof p?.x === 'number' && typeof p?.y === 'number'
-          ),
+          points: pts.map((p: { x: number; y: number }) => ({ x: p.x / scale, y: p.y / scale })),
         };
       }
       return { type: 'none' };
