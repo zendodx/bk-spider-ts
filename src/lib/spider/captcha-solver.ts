@@ -20,6 +20,9 @@ import os from 'os';
 
 const SETTINGS_FILE = path.join(os.homedir(), 'bk_spider_data', 'settings.json');
 
+/** 调试截图保存目录 */
+const DEBUG_DIR = path.join(os.homedir(), 'bk_spider_data', 'captcha_debug');
+
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_MODEL = 'qwen-vl-max-latest';
 
@@ -105,6 +108,8 @@ export class CaptchaSolver {
   /** 构造参数（可选，优先级高于 settings.json 与环境变量） */
   private overrides: { apiKey?: string; baseURL?: string; model?: string };
   private log: (msg: string) => void;
+  /** 入口按钮是否已在本次验证码会话中点击过（只点一次，重试不再点） */
+  private entryClicked = false;
 
   constructor(options: CaptchaSolverOptions = {}) {
     this.overrides = {
@@ -170,22 +175,26 @@ export class CaptchaSolver {
     const log = onLog ?? this.log;
     if (!this.isEnabled()) return false;
 
+    // 新的验证码会话：重置入口按钮状态（首次尝试时点击一次，后续重试不再点）
+    this.entryClicked = false;
+
     const { model } = this.resolveConfig();
     for (let attempt = 1; attempt <= AI_MAX_ATTEMPTS; attempt++) {
       log(`🤖 AI 验证码识别中（模型 ${model}，第 ${attempt}/${AI_MAX_ATTEMPTS} 次）...`);
       try {
-        const solved = await this.trySolveOnce(page, captchaSelectors, log);
+        const solved = await this.trySolveOnce(page, captchaSelectors, log, attempt);
         if (solved) {
           log('🤖 AI 验证通过 ✓');
           return true;
         }
-        // 本轮失败：刷新验证码换一张新题再试（最后一轮不用刷）
+        // 本轮失败：极验会自动刷新出新题，无需手动点刷新，等新题加载即可
         if (attempt < AI_MAX_ATTEMPTS) {
-          await this.refreshCaptcha(page, log);
+          log('🤖 本轮未通过，等待新验证码自动加载...');
+          await page.waitForTimeout(2000);
         }
       } catch (e) {
         log(`🤖 AI 识别异常: ${e instanceof Error ? e.message : e}`);
-        await this.refreshCaptcha(page, log).catch(() => {});
+        await page.waitForTimeout(2000);
       }
     }
 
@@ -194,32 +203,21 @@ export class CaptchaSolver {
   }
 
   /**
-   * 点击极验的「刷新」按钮换一张新题
-   * 验证失败后旧拼图通常已失效，需要刷新出新题再识别
+   * 保存本轮发送给模型的截图到调试目录，便于事后核对模型实际看到的画面
    */
-  private async refreshCaptcha(page: Page, log: (msg: string) => void): Promise<void> {
-    const REFRESH_SELECTORS = [
-      '.geetest_refresh',
-      '.geetest_refresh_tip',
-      'div[aria-label="刷新"]',
-      'text=刷新',
-    ];
-    for (const sel of REFRESH_SELECTORS) {
-      const el = await page.$(sel);
-      if (!el) continue;
-      const visible = await el.isVisible().catch(() => false);
-      if (!visible) continue;
-      try {
-        await el.click();
-        log('🤖 已刷新验证码，获取新题');
-        await page.waitForTimeout(1200 + Math.random() * 600); // 等新题加载
-        return;
-      } catch {
-        // 点不动就试下一个选择器
-      }
+  private saveDebugScreenshot(buf: Buffer, attempt: number, log: (msg: string) => void): void {
+    try {
+      fs.mkdirSync(DEBUG_DIR, { recursive: true });
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:T]/g, '')
+        .slice(0, 14);
+      const file = path.join(DEBUG_DIR, `captcha_${ts}_attempt${attempt}.jpg`);
+      fs.writeFileSync(file, buf);
+      log(`🤖 截图已保存：${file}（${(buf.length / 1024).toFixed(1)}KB）`);
+    } catch {
+      // 调试截图保存失败不影响主流程
     }
-    // 没找到刷新按钮：等一下让极验自动换题
-    await page.waitForTimeout(1500);
   }
 
   /**
@@ -282,7 +280,8 @@ export class CaptchaSolver {
   private async trySolveOnce(
     page: Page,
     captchaSelectors: string[],
-    log: (msg: string) => void
+    log: (msg: string) => void,
+    attempt = 1
   ): Promise<boolean> {
     // 贝壳验证页是「入口按钮」模式：先点「点击按钮开始验证」才弹出滑块/点选面板，
     // 且风险低时点击后直接无感通过
@@ -296,6 +295,11 @@ export class CaptchaSolver {
 
     // 优先裁剪验证码容器区域截图（更高相对分辨率，VL 坐标更准），找不到容器则全页截图
     const region = await this.findCaptchaRegion(page);
+    log(
+      region
+        ? `🤖 截图区域：验证码容器 (${Math.round(region.x)}, ${Math.round(region.y)}) ${Math.round(region.width)}×${Math.round(region.height)}`
+        : '🤖 截图区域：未找到验证码容器，使用全页截图'
+    );
     const screenshot = await page.screenshot({
       type: 'jpeg',
       quality: 95,
@@ -303,6 +307,7 @@ export class CaptchaSolver {
       ...(region ? { clip: region } : {}),
     });
     const base64 = screenshot.toString('base64');
+    this.saveDebugScreenshot(screenshot, attempt, log);
 
     const map: CaptchaRegion = region ?? (() => {
       const vp = page.viewportSize() ?? { width: 1280, height: 800 };
@@ -346,6 +351,9 @@ export class CaptchaSolver {
    * 用鼠标拟人点击而不是 el.click，避免被行为检测
    */
   private async clickEntryButtonIfPresent(page: Page, log: (msg: string) => void): Promise<void> {
+    // 本次会话已点过入口按钮，直接跳过
+    if (this.entryClicked) return;
+
     const ENTRY_SELECTORS = [
       '.geetest_btn_click',
       '.geetest_radar_btn',
@@ -361,6 +369,7 @@ export class CaptchaSolver {
       if (!box) continue;
 
       log('🤖 检测到验证入口按钮，点击进入验证...');
+      this.entryClicked = true;
       const targetX = box.x + box.width / 2 + (Math.random() * 8 - 4);
       const targetY = box.y + box.height / 2 + (Math.random() * 6 - 3);
       await page.mouse.move(targetX - 40, targetY + 10, { steps: 6 });
@@ -427,7 +436,8 @@ export class CaptchaSolver {
       log(`🤖 识别出的拖动距离异常（${distance.toFixed(1)}px），跳过本轮`);
       return;
     }
-    log(`🤖 滑块验证码：拖动距离 ${distance.toFixed(1)}px`);
+    const startXDesc = elBox ? 'DOM 元素' : '视觉估计';
+    log(`🤖 滑块验证码：起点 (${startX.toFixed(1)}, ${startY.toFixed(1)})[${startXDesc}]，缺口 x=${gapPageX.toFixed(1)}，拖动距离 ${distance.toFixed(1)}px`);
 
     await this.humanDrag(page, startX, startY, distance);
   }
@@ -528,6 +538,7 @@ export class CaptchaSolver {
    */
   private async askVisionModel(base64Jpeg: string, log?: (msg: string) => void): Promise<CaptchaPlan | null> {
     const { apiKey, baseURL, model } = this.resolveConfig();
+    const reqStart = Date.now();
     const resp = await fetch(`${baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -563,7 +574,7 @@ export class CaptchaSolver {
       choices?: { message?: { content?: string } }[];
     };
     const text = data.choices?.[0]?.message?.content?.trim() ?? '';
-    log?.(`🤖 模型原始返回：${text.slice(0, 300)}${text.length > 300 ? '…' : ''}`);
+    log?.(`🤖 模型原始返回（耗时 ${((Date.now() - reqStart) / 1000).toFixed(1)}s）：${text.slice(0, 300)}${text.length > 300 ? '…' : ''}`);
     return this.parsePlan(text);
   }
 
