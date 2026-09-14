@@ -400,26 +400,26 @@ export class CaptchaSolver {
     // 缺口在页面上的绝对坐标
     const gapPageX = map.x + (plan.gapX / 100) * map.width;
 
-    // 优先用真实的滑块 DOM 元素定位起点（比视觉估计更准）
-    const sliderEl = await page.$('.geetest_slider_button, .geetest_btn_click');
-    let startX: number;
-    let startY: number;
+    // 只信任真实可见的滑块手柄 DOM 元素，绝不用视觉估计的起点：
+    // 点选/图标题被误判为滑块题时没有手柄，若按估计坐标按下拖拽，会抓住图片或面板乱拖
+    //（表现为「验证码往下滚动」）。找不到手柄 = 误识别，放弃本轮
+    const sliderEl = await page.$('.geetest_slider_button');
     const elBox = sliderEl ? await sliderEl.boundingBox().catch(() => null) : null;
-    if (elBox) {
-      startX = elBox.x + elBox.width / 2;
-      startY = elBox.y + elBox.height / 2;
-    } else {
-      startX = map.x + (plan.sliderX / 100) * map.width;
-      startY = map.y + (plan.sliderY / 100) * map.height;
-    }
-
-    const distance = gapPageX - startX;
-    if (distance <= 0) {
-      log(`🤖 识别出的拖动距离异常（${distance.toFixed(1)}px），跳过本轮`);
+    const elVisible = sliderEl ? await sliderEl.isVisible().catch(() => false) : false;
+    if (!elBox || !elVisible) {
+      log('🤖 未找到可见的滑块手柄，疑似误识别为滑块题，跳过本轮拖拽');
       return;
     }
-    const startXDesc = elBox ? 'DOM 元素' : '视觉估计';
-    log(`🤖 滑块验证码：起点 (${startX.toFixed(1)}, ${startY.toFixed(1)})[${startXDesc}]，缺口 x=${gapPageX.toFixed(1)}，拖动距离 ${distance.toFixed(1)}px`);
+    const startX = elBox.x + elBox.width / 2;
+    const startY = elBox.y + elBox.height / 2;
+
+    const distance = gapPageX - startX;
+    // 拖动距离必须向右且不超过面板宽度，超出即视为识别错误（防飞出乱拖）
+    if (distance <= 5 || distance > map.width) {
+      log(`🤖 识别出的拖动距离异常（${distance.toFixed(1)}px，面板宽 ${map.width.toFixed(0)}px），跳过本轮`);
+      return;
+    }
+    log(`🤖 滑块验证码：起点 (${startX.toFixed(1)}, ${startY.toFixed(1)})[DOM 元素]，缺口 x=${gapPageX.toFixed(1)}，拖动距离 ${distance.toFixed(1)}px`);
 
     await this.humanDrag(page, startX, startY, distance);
   }
@@ -444,8 +444,11 @@ export class CaptchaSolver {
       if (!el) continue;
       const visible = await el.isVisible().catch(() => false);
       if (!visible) continue;
+      // 用鼠标按坐标点击而不是 el.click()：el.click() 会先 scrollIntoView，可能带动页面/面板滚动
+      const box = await el.boundingBox().catch(() => null);
+      if (!box) continue;
       try {
-        await el.click();
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         log('🤖 已点击「确定」提交验证');
         return;
       } catch {
@@ -894,12 +897,14 @@ export class CaptchaSolver {
       const obj = JSON.parse(match[0]);
       if (obj.type === 'slider' && typeof obj.gapX === 'number') {
         const scale = detectScale([obj.gapX, obj.sliderX, obj.sliderY]);
-        return {
-          type: 'slider',
-          gapX: obj.gapX / scale,
-          sliderX: typeof obj.sliderX === 'number' ? obj.sliderX / scale : 0,
-          sliderY: typeof obj.sliderY === 'number' ? obj.sliderY / scale : 50,
-        };
+        const gapX = obj.gapX / scale;
+        const sliderX = typeof obj.sliderX === 'number' ? obj.sliderX / scale : 0;
+        const sliderY = typeof obj.sliderY === 'number' ? obj.sliderY / scale : 50;
+        // 坐标越界视为无效方案（防飞出拖拽）
+        if (gapX < 0 || gapX > 100 || sliderX < 0 || sliderX > 100 || sliderY < 0 || sliderY > 100) {
+          return { type: 'none' };
+        }
+        return { type: 'slider', gapX, sliderX, sliderY };
       }
 if (obj.type === 'click' && Array.isArray(obj.points) && obj.points.length > 0) {
 const pts = obj.points.filter(
@@ -912,8 +917,9 @@ type: 'click',
 hint: typeof obj.hint === 'string' && obj.hint.trim() ? obj.hint.trim() : undefined,
 hintKind: obj.hintKind === 'icon' ? ('icon' as const) : ('text' as const),
 points: pts.map((p: { x: number; y: number; text?: string }) => ({
-x: p.x / scale,
-            y: p.y / scale,
+            // 钳制到 0-100，防止越界坐标点到面板外的页面元素
+            x: Math.min(100, Math.max(0, p.x / scale)),
+            y: Math.min(100, Math.max(0, p.y / scale)),
             text: typeof p.text === 'string' ? p.text : undefined,
           })),
         };
