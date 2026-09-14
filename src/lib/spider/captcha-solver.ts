@@ -292,6 +292,9 @@ export class CaptchaSolver {
       let sortedPoints: ClickPlan['points'] | null = null;
       if (plan.hintKind === 'icon') {
         sortedPoints = await this.matchIconOrder(page, map, log);
+      } else if (plan.hint) {
+        // 文字类：重叠/旋转汉字在整图枚举时坐标容易张冠李戴，按提示语逐字单点定位更可靠
+        sortedPoints = await this.refineClickPointsByHint(plan.hint, base64, log);
       }
       if (!sortedPoints) {
         sortedPoints = await this.orderClickPoints(plan.points, plan.hint, log);
@@ -582,6 +585,66 @@ export class CaptchaSolver {
     } catch {
       return 0;
     }
+  }
+
+  /**
+   * 单字精确定位：相互重叠/旋转的汉字在整图枚举识别时，字的 label 和坐标容易张冠李戴；
+   * 改成每个目标字单独问一次（单一目标不可能交换坐标），重叠场景下更可靠。
+   */
+  private async locateSingleChar(
+    base64Jpeg: string,
+    char: string
+  ): Promise<{ x: number; y: number } | null> {
+    try {
+      const { text } = await this.postVision(
+        [
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` } },
+          {
+            type: 'text',
+            text: `这张图里有若干个相互重叠/旋转的彩色汉字。请只找汉字「${char}」的中心位置（注意区分与它重叠在一起的其他汉字，不要找错）。
+返回 JSON（只返回 JSON）：{"x": 水平坐标, "y": 垂直坐标}，坐标为占图片宽/高的百分比（0-100，保留 1 位小数，不能超过 100）。`,
+          },
+        ],
+        50
+      );
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const obj = JSON.parse(m[0]);
+      if (typeof obj.x !== 'number' || typeof obj.y !== 'number') return null;
+      const scale = detectScale([obj.x, obj.y]);
+      const x = obj.x / scale;
+      const y = obj.y / scale;
+      if (x < 0 || x > 100 || y < 0 || y > 100) return null;
+      return { x, y };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 提示语型验证码的坐标精修：按提示语顺序，对每个目标字做一次单字定位。
+   * 任何一个字定位失败返回 null，调用方退回整体识别的坐标。
+   */
+  private async refineClickPointsByHint(
+    hint: string,
+    base64Jpeg: string,
+    log: (msg: string) => void
+  ): Promise<{ x: number; y: number; text?: string }[] | null> {
+    const chars = [...hint.replace(/\s/g, '')];
+    if (chars.length === 0) return null;
+    const located: { x: number; y: number; text: string }[] = [];
+    for (const ch of chars) {
+      const pt = await this.locateSingleChar(base64Jpeg, ch);
+      if (!pt) {
+        log(`🤖 单字「${ch}」定位失败，退回整体识别坐标`);
+        return null;
+      }
+      located.push({ ...pt, text: ch });
+    }
+    log(
+      `🤖 单字精确定位：${located.map(p => `${p.text}(${p.x.toFixed(1)},${p.y.toFixed(1)})`).join(' → ')}`
+    );
+    return located;
   }
 
   /**
