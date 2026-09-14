@@ -32,8 +32,19 @@ export interface SunlightTarget {
   district: string;
 }
 
+/** 跳转到其他面板时携带的小区信息 */
+export interface CommunityActionTarget {
+  community: string;
+  /** 该小区最新采集日期（房源列表用） */
+  crawlDate?: string;
+}
+
 interface CommunityPanelProps {
   onOpenSunlightAnalysis?: (target: SunlightTarget) => void;
+  onOpenListings?: (target: CommunityActionTarget) => void;
+  onOpenStats?: (target: CommunityActionTarget) => void;
+  onOpenFavorites?: (target: CommunityActionTarget) => void;
+  onOpenSpider?: (target: CommunityActionTarget) => void;
 }
 
 const ORDER_OPTIONS: { value: `${OrderBy}|${'asc' | 'desc'}`; label: string }[] = [
@@ -97,7 +108,7 @@ function SortTh({
   );
 }
 
-export default function CommunityPanel({ onOpenSunlightAnalysis }: CommunityPanelProps) {
+export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings, onOpenStats, onOpenFavorites, onOpenSpider }: CommunityPanelProps) {
   const { selectedCityFilter } = useCityContext();
   const [keyword, setKeyword]     = useState('');
   const [inputKeyword, setInputKeyword] = useState('');
@@ -326,7 +337,7 @@ export default function CommunityPanel({ onOpenSunlightAnalysis }: CommunityPane
                   <col className="w-24" />           {/* 中位价 */}
                   <col className="w-24" />           {/* 均总价 */}
                   <col className="w-32" />           {/* 总价区间 */}
-                  <col className="w-24" />           {/* 操作 */}
+                  <col className="w-72" />           {/* 操作 */}
                 </colgroup>
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
@@ -435,24 +446,54 @@ export default function CommunityPanel({ onOpenSunlightAnalysis }: CommunityPane
                           : '—'}
                       </td>
 
-                      {/* 操作：采光分析（仅有小区链接时可用） */}
-                      <td className="px-3 py-2.5 text-center">
-                        {row.community_url ? (
+                      {/* 操作：房源列表 / 价格统计 / 房源收藏 / 爬虫采集 / 采光分析 */}
+                      <td className="px-2 py-2">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
                           <button
-                            onClick={() => onOpenSunlightAnalysis?.({
-                              communityUrl: row.community_url as string,
-                              community: row.community,
-                              city: row.city,
-                              district: row.district,
-                            })}
-                            className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium whitespace-nowrap transition-colors"
-                            title="进入采光分析"
+                            onClick={() => onOpenListings?.({ community: row.community, crawlDate: row.latest_date })}
+                            className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium whitespace-nowrap transition-colors"
+                            title="查看该小区的房源列表"
                           >
-                            ☀️ 采光分析
+                            🏘️ 房源
                           </button>
-                        ) : (
-                          <span className="text-gray-300" title="该小区缺少链接，暂不支持采光分析">—</span>
-                        )}
+                          <button
+                            onClick={() => onOpenStats?.({ community: row.community })}
+                            className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 hover:bg-green-100 font-medium whitespace-nowrap transition-colors"
+                            title="查看该小区的价格统计"
+                          >
+                            📊 统计
+                          </button>
+                          <button
+                            onClick={() => onOpenFavorites?.({ community: row.community })}
+                            className="px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700 hover:bg-yellow-100 font-medium whitespace-nowrap transition-colors"
+                            title="查看该小区的收藏房源"
+                          >
+                            ⭐ 收藏
+                          </button>
+                          <button
+                            onClick={() => onOpenSpider?.({ community: row.community })}
+                            className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium whitespace-nowrap transition-colors"
+                            title="跳转爬虫采集，自动填入该小区"
+                          >
+                            🕷️ 采集
+                          </button>
+                          {row.community_url ? (
+                            <button
+                              onClick={() => onOpenSunlightAnalysis?.({
+                                communityUrl: row.community_url as string,
+                                community: row.community,
+                                city: row.city,
+                                district: row.district,
+                              })}
+                              className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium whitespace-nowrap transition-colors"
+                              title="进入采光分析"
+                            >
+                              ☀️ 采光
+                            </button>
+                          ) : (
+                            <span className="px-1.5 py-0.5 text-gray-300" title="该小区缺少链接，暂不支持采光分析">☀️ —</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

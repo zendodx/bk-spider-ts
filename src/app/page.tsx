@@ -11,7 +11,7 @@ import SettingsPanel from '@/components/SettingsPanel';
 import CleanerPanel from '@/components/CleanerPanel';
 import BackupPanel from '@/components/BackupPanel';
 import ExpiredListingsPanel from '@/components/ExpiredListingsPanel';
-import CommunityPanel, { type SunlightTarget } from '@/components/CommunityPanel';
+import CommunityPanel, { type SunlightTarget, type CommunityActionTarget } from '@/components/CommunityPanel';
 import SunlightPanel from '@/components/SunlightPanel';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 import { useCityContext } from '@/lib/CityContext';
@@ -21,10 +21,32 @@ type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'c
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('spider');
   const [pendingSunlightTarget, setPendingSunlightTarget] = useState<SunlightTarget | null>(null);
+  // 小区信息页跳转到其他面板时携带的目标
+  const [pendingListingsTarget, setPendingListingsTarget] = useState<CommunityActionTarget | null>(null);
+  const [pendingStatsCommunity, setPendingStatsCommunity] = useState<string | null>(null);
+  const [pendingFavoritesCommunity, setPendingFavoritesCommunity] = useState<string | null>(null);
+  const [pendingSpiderCommunity, setPendingSpiderCommunity] = useState<string | null>(null);
 
   const handleOpenSunlightAnalysis = (targetInfo: SunlightTarget) => {
     setPendingSunlightTarget(targetInfo);
     setActiveTab('sunlight');
+  };
+
+  const handleOpenListings = (target: CommunityActionTarget) => {
+    setPendingListingsTarget(target);
+    setActiveTab('listings');
+  };
+  const handleOpenStats = (target: CommunityActionTarget) => {
+    setPendingStatsCommunity(target.community);
+    setActiveTab('stats');
+  };
+  const handleOpenFavorites = (target: CommunityActionTarget) => {
+    setPendingFavoritesCommunity(target.community);
+    setActiveTab('favorites');
+  };
+  const handleOpenSpider = (target: CommunityActionTarget) => {
+    setPendingSpiderCommunity(target.community);
+    setActiveTab('spider');
   };
   const { theme, setTheme } = useTheme();
   const { cityNames, selectedCity, setSelectedCity, selectedHost } = useCityContext();
@@ -143,15 +165,15 @@ export default function Home() {
 
       {/* 内容区域：所有 Panel 始终挂载，通过 CSS 控制显隐，避免切换 Tab 时状态被重置 */}
       <main className="flex-1 overflow-hidden">
-        <div className="h-full" style={{ display: activeTab === 'spider'    ? 'block' : 'none' }}><SpiderPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'spider'    ? 'block' : 'none' }}><SpiderPanel pendingCommunity={pendingSpiderCommunity} onConsumePendingCommunity={() => setPendingSpiderCommunity(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'predict'   ? 'block' : 'none' }}><PredictPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'loan'      ? 'block' : 'none' }}><LoanPanel /></div>
-        <div className="h-full" style={{ display: activeTab === 'stats'     ? 'block' : 'none' }}><StatsPanel /></div>
-        <div className="h-full" style={{ display: activeTab === 'listings'  ? 'block' : 'none' }}><ListingsPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'stats'     ? 'block' : 'none' }}><StatsPanel pendingCommunity={pendingStatsCommunity} onConsumePendingCommunity={() => setPendingStatsCommunity(null)} /></div>
+        <div className="h-full" style={{ display: activeTab === 'listings'  ? 'block' : 'none' }}><ListingsPanel pendingTarget={pendingListingsTarget} onConsumePendingTarget={() => setPendingListingsTarget(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'expired'   ? 'block' : 'none' }}><ExpiredListingsPanel /></div>
-        <div className="h-full" style={{ display: activeTab === 'community' ? 'block' : 'none' }}><CommunityPanel onOpenSunlightAnalysis={handleOpenSunlightAnalysis} /></div>
+        <div className="h-full" style={{ display: activeTab === 'community' ? 'block' : 'none' }}><CommunityPanel onOpenSunlightAnalysis={handleOpenSunlightAnalysis} onOpenListings={handleOpenListings} onOpenStats={handleOpenStats} onOpenFavorites={handleOpenFavorites} onOpenSpider={handleOpenSpider} /></div>
         <div className="h-full" style={{ display: activeTab === 'sunlight' ? 'block' : 'none' }}><SunlightPanel pendingTarget={pendingSunlightTarget} onConsumePendingTarget={() => setPendingSunlightTarget(null)} /></div>
-        <div className="h-full" style={{ display: activeTab === 'favorites' ? 'block' : 'none' }}><FavoritesPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'favorites' ? 'block' : 'none' }}><FavoritesPanel pendingCommunity={pendingFavoritesCommunity} onConsumePendingCommunity={() => setPendingFavoritesCommunity(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'cleaner'   ? 'block' : 'none' }}><CleanerPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'settings'  ? 'block' : 'none' }}><SettingsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'backup'    ? 'block' : 'none' }}><BackupPanel /></div>

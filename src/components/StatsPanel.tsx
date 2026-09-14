@@ -695,7 +695,13 @@ ${allDataTable}
 // ─────────────────────────────────────────────
 // 主组件
 // ─────────────────────────────────────────────
-export default function StatsPanel() {
+interface StatsPanelProps {
+  /** 从其他面板跳转进来时待消费的小区名（自动填入并查询） */
+  pendingCommunity?: string | null;
+  onConsumePendingCommunity?: () => void;
+}
+
+export default function StatsPanel({ pendingCommunity, onConsumePendingCommunity }: StatsPanelProps) {
   const { selectedCityFilter } = useCityContext();
   const [community, setCommunity] = useState('');
   const [houseType, setHouseType] = useState('');
@@ -761,8 +767,9 @@ const [floorTypes, setFloorTypes] = useState<string[]>([]);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleQuery = useCallback(async () => {
-    if (!community.trim()) {
+  const handleQuery = useCallback(async (communityOverride?: string) => {
+    const c = (communityOverride ?? community).trim();
+    if (!c) {
       setError('请输入或选择小区名称');
       return;
     }
@@ -772,7 +779,7 @@ const [floorTypes, setFloorTypes] = useState<string[]>([]);
 
     try {
 const params = new URLSearchParams({
-  community: community.trim(),
+  community: c,
   excludeBasement: String(excludeBasement),
   excludeLowFloor: String(excludeLowFloor),
   excludeTwoFloor: String(excludeTwoFloor),
@@ -804,6 +811,16 @@ if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
       setLoading(false);
     }
   }, [community, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, limit, areaEnabled, areaMin, areaMax, selectedCityFilter]);
+
+  // 从小区信息面板跳转进来：自动填入小区并查询
+  useEffect(() => {
+    if (!pendingCommunity) return;
+    setCommunity(pendingCommunity);
+    setCommunityKeyword(pendingCommunity);
+    onConsumePendingCommunity?.();
+    handleQuery(pendingCommunity);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommunity]);
 
   // 万/平 → 元/平 显示
   const fmtUnitPrice = (v: number | null) => {
@@ -1022,7 +1039,7 @@ if (floorTypes.length > 0) params.set('floorTypes', floorTypes.join(','));
 
           {/* 查询按钮 */}
           <button
-            onClick={handleQuery}
+            onClick={() => handleQuery()}
             disabled={loading}
             className="px-6 py-2 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >

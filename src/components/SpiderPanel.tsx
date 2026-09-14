@@ -37,7 +37,13 @@ interface LogEntry {
   timestamp: string;
 }
 
-export default function SpiderPanel() {
+interface SpiderPanelProps {
+  /** 从其他面板跳转进来时待消费的小区名（自动填入 SUG） */
+  pendingCommunity?: string | null;
+  onConsumePendingCommunity?: () => void;
+}
+
+export default function SpiderPanel({ pendingCommunity, onConsumePendingCommunity }: SpiderPanelProps) {
   const { selectedCityFilter, selectedHost } = useCityContext();
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [params, setParams] = useState<SpiderParams>({
@@ -174,6 +180,16 @@ export default function SpiderPanel() {
       houseId: mapping[sug] || prev.houseId,
     }));
   };
+
+  // 从小区信息面板跳转进来：自动填入小区名到 SUG
+  useEffect(() => {
+    if (!pendingCommunity) return;
+    handleSugChange(pendingCommunity);
+    setCommunityKeyword(pendingCommunity);
+    onConsumePendingCommunity?.();
+    addLog(`已从小区信息面板填入目标小区: ${pendingCommunity}，点击「启动爬虫」开始采集`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommunity]);
 
   const handleSpeedModeChange = (mode: string) => {
     setParams(prev => ({ ...prev, speedMode: mode }));

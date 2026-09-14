@@ -1386,7 +1386,13 @@ function ImageModal({ url, title, onClose }: { url: string; title: string; onClo
   );
 }
 
-export default function ListingsPanel() {
+interface ListingsPanelProps {
+  /** 从其他面板跳转进来时待消费的目标（自动填入小区并查询） */
+  pendingTarget?: { community: string; crawlDate?: string } | null;
+  onConsumePendingTarget?: () => void;
+}
+
+export default function ListingsPanel({ pendingTarget, onConsumePendingTarget }: ListingsPanelProps) {
   const { selectedCityFilter } = useCityContext();
   // 筛选条件
   const [community, setCommunity]           = useState('');
@@ -1491,8 +1497,10 @@ const [showChart, setShowChart] = useState(false);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleQuery = useCallback(async () => {
-    if (!community.trim()) {
+  const handleQuery = useCallback(async (override?: { community?: string; crawlDate?: string }) => {
+    const c = (override?.community ?? community).trim();
+    const cd = override?.crawlDate ?? crawlDate;
+    if (!c) {
       setError('请输入或选择小区名称');
       return;
     }
@@ -1504,8 +1512,8 @@ const [showChart, setShowChart] = useState(false);
     try {
       const [orderBy, order] = sortKey.split('|');
       const params = new URLSearchParams({
-        community: community.trim(),
-        crawlDate,
+        community: c,
+        crawlDate: cd,
         excludeBasement: String(excludeBasement),
         excludeLowFloor: String(excludeLowFloor),
         excludeTwoFloor: String(excludeTwoFloor),
@@ -1567,6 +1575,17 @@ const [showChart, setShowChart] = useState(false);
       setLoading(false);
     }
   }, [community, crawlDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, floorTypes, sortKey, limit, areaEnabled, areaMin, areaMax]);
+
+  // 从小区信息面板跳转进来：自动填入小区并查询
+  useEffect(() => {
+    if (!pendingTarget) return;
+    setCommunity(pendingTarget.community);
+    setCommunityKeyword(pendingTarget.community);
+    if (pendingTarget.crawlDate) setCrawlDate(pendingTarget.crawlDate);
+    onConsumePendingTarget?.();
+    handleQuery({ community: pendingTarget.community, crawlDate: pendingTarget.crawlDate });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTarget]);
 
   // 收藏
   const handleFavorite = useCallback(async (row: ListingRow) => {
@@ -1908,7 +1927,7 @@ const [showChart, setShowChart] = useState(false);
 
           {/* 查询按钮 */}
           <button
-            onClick={handleQuery}
+            onClick={() => handleQuery()}
             disabled={loading}
             className="px-6 py-2 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
