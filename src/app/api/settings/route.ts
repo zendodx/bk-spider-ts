@@ -33,6 +33,10 @@ interface AppSettings {
   qwenModel: string;
   /** AI 验证码求解：OpenAI 兼容接口地址 */
   qwenBaseUrl: string;
+  /** AI 验证码求解：是否开启 AI 自动识别（默认关闭，开启后仍需配置 API Key） */
+  aiCaptchaEnabled: boolean;
+  /** AI 验证码求解：单次验证码最大尝试轮数 */
+  aiMaxAttempts: number;
 }
 
 const DEFAULT_CITY_HOST_MAP: Record<string, string> = {
@@ -66,6 +70,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   qwenApiKey: '',
   qwenModel: 'qwen-vl-max-latest',
   qwenBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  aiCaptchaEnabled: false,
+  aiMaxAttempts: 10,
 };
 
 export async function GET() {
@@ -92,7 +98,17 @@ export async function POST(request: NextRequest) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    const merged = { ...DEFAULT_SETTINGS, ...data };
+    // 先读出已保存的值再合并，避免调用方未提交的字段（如采集页的 AI 配置）被默认值覆盖
+    let existing: Record<string, unknown> = {};
+    try {
+      if (fs.existsSync(SETTINGS_FILE)) {
+        existing = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+      }
+    } catch {
+      // 文件损坏则视为无历史值
+    }
+
+    const merged = { ...DEFAULT_SETTINGS, ...existing, ...data };
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf-8');
 
     return Response.json({ success: true, message: '设置已保存' });

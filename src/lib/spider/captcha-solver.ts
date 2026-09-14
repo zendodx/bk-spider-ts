@@ -36,8 +36,8 @@ export const QWEN_VL_MODEL_PRESETS = [
   'qwen2.5-vl-32b-instruct',
 ];
 
-/** AI 求解单次验证码的最大尝试轮数（每轮含一次截图识别 + 一次操作） */
-const AI_MAX_ATTEMPTS = 5;
+/** AI 求解单次验证码的默认最大尝试轮数（可在采集页/系统设置中配置覆盖） */
+const AI_MAX_ATTEMPTS = 10;
 
 /** 操作完成后等待验证码组件消失的时间 */
 const VERIFY_WAIT_MS = 3000;
@@ -142,6 +142,10 @@ export class CaptchaSolver {
   private log: (msg: string) => void;
   /** 入口按钮是否已在本次验证码会话中点击过（只点一次，重试不再点） */
   private entryClicked = false;
+  /** 采集页注入的 AI 开关（null = 读 settings.json，均缺省时默认关闭） */
+  private aiEnabledOverride: boolean | null = null;
+  /** 采集页注入的最大尝试轮数（null = 读 settings.json，均缺省时取 AI_MAX_ATTEMPTS） */
+  private aiMaxAttemptsOverride: number | null = null;
 
   constructor(options: CaptchaSolverOptions = {}) {
     this.overrides = {
@@ -153,6 +157,41 @@ export class CaptchaSolver {
   }
 
   /**
+   * 采集页启动爬虫时注入的 AI 配置（每次启动都会覆盖上一次的值）
+   */
+  configure(options: { enabled?: boolean; maxAttempts?: number }): void {
+    if (typeof options.enabled === 'boolean') this.aiEnabledOverride = options.enabled;
+    if (typeof options.maxAttempts === 'number' && Number.isFinite(options.maxAttempts)) {
+      this.aiMaxAttemptsOverride = Math.max(1, Math.min(50, Math.floor(options.maxAttempts)));
+    }
+  }
+
+  /** 读取 settings.json（损坏时静默降级为空对象） */
+  private readSavedSettings(): Record<string, unknown> {
+    try {
+      if (fs.existsSync(SETTINGS_FILE)) {
+        return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+      }
+    } catch {
+      // 设置文件损坏时静默降级到环境变量/默认值
+    }
+    return {};
+  }
+
+  /** AI 开关与尝试轮数，优先级：采集页注入 > settings.json > 默认（关闭 / 10 次） */
+  private resolveAiOptions(): { enabled: boolean; maxAttempts: number } {
+    const saved = this.readSavedSettings();
+    const savedAttempts =
+      typeof saved.aiMaxAttempts === 'number' && saved.aiMaxAttempts >= 1
+        ? Math.floor(saved.aiMaxAttempts)
+        : AI_MAX_ATTEMPTS;
+    return {
+      enabled: this.aiEnabledOverride ?? saved.aiCaptchaEnabled === true,
+      maxAttempts: this.aiMaxAttemptsOverride ?? savedAttempts,
+    };
+  }
+
+  /**
    * 动态解析配置，优先级：构造参数 > settings.json（系统设置页保存）> 环境变量 > 默认值
    *
    * 每次求解前重新读取，保证在「系统设置」里切换模型 / Key 后无需重启即生效。
@@ -160,9 +199,7 @@ export class CaptchaSolver {
   private resolveConfig(): { apiKey: string | null; baseURL: string; model: string } {
     let saved: Record<string, string> = {};
     try {
-      if (fs.existsSync(SETTINGS_FILE)) {
-        saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-      }
+      saved = this.readSavedSettings() as Record<string, string>;
     } catch {
       // 设置文件损坏时静默降级到环境变量
     }
@@ -189,9 +226,9 @@ export class CaptchaSolver {
     };
   }
 
-  /** 是否已配置 API Key（未配置时 AI 求解整体跳过） */
+  /** 是否启用 AI 求解（需在采集页/系统设置中开启开关，且已配置 API Key） */
   isEnabled(): boolean {
-    return !!this.resolveConfig().apiKey;
+    return this.resolveAiOptions().enabled && !!this.resolveConfig().apiKey;
   }
 
   /**
@@ -211,8 +248,9 @@ export class CaptchaSolver {
     this.entryClicked = false;
 
     const { model } = this.resolveConfig();
-    for (let attempt = 1; attempt <= AI_MAX_ATTEMPTS; attempt++) {
-      log(`🤖 AI 验证码识别中（模型 ${model}，第 ${attempt}/${AI_MAX_ATTEMPTS} 次）...`);
+    const maxAttempts = this.resolveAiOptions().maxAttempts;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      log(`🤖 AI 验证码识别中（模型 ${model}，第 ${attempt}/${maxAttempts} 次）...`);
       try {
         const solved = await this.trySolveOnce(page, captchaSelectors, log, attempt);
         if (solved) {
@@ -220,7 +258,7 @@ export class CaptchaSolver {
           return true;
         }
         // 本轮失败：极验会自动刷新出新题，无需手动点刷新，等新题加载即可
-        if (attempt < AI_MAX_ATTEMPTS) {
+        if (attempt < maxAttempts) {
           log('🤖 本轮未通过，等待新验证码自动加载...');
           await page.waitForTimeout(2000);
         }
@@ -230,7 +268,7 @@ export class CaptchaSolver {
       }
     }
 
-    log(`🤖 AI 尝试 ${AI_MAX_ATTEMPTS} 次均未通过，转人工处理`);
+    log(`🤖 AI 尝试 ${maxAttempts} 次均未通过，转人工处理`);
     return false;
   }
 

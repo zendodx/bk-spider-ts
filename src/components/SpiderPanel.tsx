@@ -19,6 +19,10 @@ interface SpiderParams {
   exportCsv: boolean;
   dataDir: string;
   blockResources: boolean;
+  /** AI 自动识别验证码开关（默认关闭） */
+  aiCaptchaEnabled: boolean;
+  /** AI 单次验证码最大尝试轮数（默认 10） */
+  aiMaxAttempts: number;
 }
 
 interface ProgressInfo {
@@ -52,6 +56,8 @@ export default function SpiderPanel() {
     exportCsv: true,
     dataDir: '',
     blockResources: false,
+    aiCaptchaEnabled: false,
+    aiMaxAttempts: 10,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -129,6 +135,8 @@ export default function SpiderPanel() {
           maxEmptyPages: s.maxEmptyPages ?? prev.maxEmptyPages,
           exportCsv: s.exportCsv ?? prev.exportCsv,
           dataDir: s.dataDir || prev.dataDir,
+          aiCaptchaEnabled: s.aiCaptchaEnabled ?? prev.aiCaptchaEnabled,
+          aiMaxAttempts: s.aiMaxAttempts ?? prev.aiMaxAttempts,
         }));
       }
     });
@@ -546,6 +554,36 @@ export default function SpiderPanel() {
                   </p>
                 </div>
               </label>
+
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={params.aiCaptchaEnabled}
+                  onChange={e => setParams(p => ({ ...p, aiCaptchaEnabled: e.target.checked }))}
+                  className="text-blue-500 mt-0.5"
+                />
+                <div>
+                  <span className="text-sm text-gray-700">AI 自动识别验证码</span>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    遇到人机验证时由 AI 自动完成，多次失败仍转人工；需先在「系统设置」配置通义千问 API Key
+                  </p>
+                </div>
+              </label>
+
+              {params.aiCaptchaEnabled && (
+                <div className="pl-6">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    AI 尝试次数（每次验证码）
+                  </label>
+                  <input
+                    type="number" min={1} max={50}
+                    value={params.aiMaxAttempts}
+                    onChange={e => setParams(p => ({ ...p, aiMaxAttempts: parseInt(e.target.value) || 10 }))}
+                    className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">超过此次数仍未通过则转人工处理，默认 10 次</p>
+                </div>
+              )}
             </div>
           </section>
 

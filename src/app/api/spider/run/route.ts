@@ -14,6 +14,7 @@ import { HouseRepository } from '@/lib/db/repository';
 import { getDb, initDatabase, analyzeDatabase } from '@/lib/db/database';
 import { DataExporter } from '@/lib/exporter';
 import { getDataDir, getDBPath } from '@/lib/settings';
+import { getCaptchaSolver } from '@/lib/spider/captcha-solver';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -57,6 +58,8 @@ export async function POST(request: NextRequest) {
           dbPath: dbPathParam,
           blockResources = false,
           captchaTimeoutMinutes = 10,
+          aiCaptchaEnabled = false,
+          aiMaxAttempts = 10,
         } = params;
 
         if (!host || !sug) {
@@ -78,6 +81,12 @@ export async function POST(request: NextRequest) {
         });
 
         sendLog(`速度模式: ${speedMode}`);
+
+        // 注入采集页的 AI 验证码配置（每次启动都会覆盖上一次的值）
+        getCaptchaSolver().configure({ enabled: aiCaptchaEnabled, maxAttempts: aiMaxAttempts });
+        sendLog(
+          `AI 验证码识别: ${aiCaptchaEnabled ? `已开启（单次最多尝试 ${aiMaxAttempts} 次）` : '未开启（验证码需人工完成）'}`
+        );
 
         // 初始化数据库
         const finalDbPath = dbPathParam || getDBPath();
