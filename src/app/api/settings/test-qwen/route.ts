@@ -9,7 +9,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { CaptchaSolver } from '@/lib/spider/captcha-solver';
+import { testAiConnection } from '@/lib/ai/client';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,8 +21,7 @@ export async function POST(request: NextRequest) {
     if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) overrides.baseURL = body.baseUrl.trim();
     if (typeof body.model === 'string' && body.model.trim()) overrides.model = body.model.trim();
 
-    const solver = new CaptchaSolver(overrides);
-    const result = await solver.testConnection();
+    const result = await testAiConnection(overrides);
     return Response.json(result);
   } catch (e) {
     return Response.json(

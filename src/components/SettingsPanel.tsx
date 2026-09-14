@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useCityContext } from '@/lib/CityContext';
+import { QWEN_VL_MODEL_PRESETS } from '@/lib/ai/presets';
 
 interface Settings {
   host: string;
@@ -22,16 +23,6 @@ interface Settings {
   qwenModel: string;
   qwenBaseUrl: string;
 }
-
-/** 可选的通义千问视觉模型（与 src/lib/spider/captcha-solver.ts 中的预设保持一致） */
-const QWEN_VL_MODEL_PRESETS = [
-  'qwen-vl-max-latest',
-  'qwen-vl-max',
-  'qwen-vl-plus-latest',
-  'qwen-vl-plus',
-  'qwen2.5-vl-72b-instruct',
-  'qwen2.5-vl-32b-instruct',
-];
 
 interface MappingEntry {
   name: string;

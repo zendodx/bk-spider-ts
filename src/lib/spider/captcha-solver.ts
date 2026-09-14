@@ -5,36 +5,26 @@
  * - 极验的滑块缺口、点选文字都渲染在 <canvas> 中，DOM 里没有可定位的目标元素，
  *   因此 Stagehand 这类基于 DOM/可访问性树的 AI 操作无法直接解决；
  * - 这里采用「截图 → 视觉大模型（通义千问 Qwen-VL）识别坐标 → Playwright 拟人轨迹执行」的方式；
- * - AI 尝试次数有限（默认 2 次），失败立即返回 false，由调用方回退人工接管。
+ * - AI 尝试次数有限（可在采集页配置），失败返回 false，由调用方回退人工接管。
  *
- * 配置（.env.local）：
- *   QWEN_API_KEY=sk-xxx          # 阿里云百炼 DashScope API Key（必填，未配置则禁用 AI 求解）
- *   QWEN_VL_MODEL=qwen-vl-max-latest  # 可选，视觉模型名称
- *   QWEN_BASE_URL=...            # 可选，OpenAI 兼容接口地址
+ * AI 接口配置统一由 @/lib/ai/client 管理（系统设置页 / 环境变量）。
  */
 
 import { Page } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-
-const SETTINGS_FILE = path.join(os.homedir(), 'bk_spider_data', 'settings.json');
+import {
+  AiConfig,
+  AiConfigOverrides,
+  callAi,
+  callAiText,
+  readSavedSettings,
+  resolveAiConfig,
+} from '@/lib/ai/client';
 
 /** 调试截图保存目录 */
 const DEBUG_DIR = path.join(os.homedir(), 'bk_spider_data', 'captcha_debug');
-
-const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-const DEFAULT_MODEL = 'qwen-vl-max-latest';
-
-/** 可选的视觉模型预设（供系统设置页下拉提示用） */
-export const QWEN_VL_MODEL_PRESETS = [
-  'qwen-vl-max-latest',
-  'qwen-vl-max',
-  'qwen-vl-plus-latest',
-  'qwen-vl-plus',
-  'qwen2.5-vl-72b-instruct',
-  'qwen2.5-vl-32b-instruct',
-];
 
 /** AI 求解单次验证码的默认最大尝试轮数（可在采集页/系统设置中配置覆盖） */
 const AI_MAX_ATTEMPTS = 10;
@@ -138,7 +128,7 @@ export interface CaptchaSolverOptions {
 
 export class CaptchaSolver {
   /** 构造参数（可选，优先级高于 settings.json 与环境变量） */
-  private overrides: { apiKey?: string; baseURL?: string; model?: string };
+  private overrides: AiConfigOverrides;
   private log: (msg: string) => void;
   /** 入口按钮是否已在本次验证码会话中点击过（只点一次，重试不再点） */
   private entryClicked = false;
@@ -166,21 +156,9 @@ export class CaptchaSolver {
     }
   }
 
-  /** 读取 settings.json（损坏时静默降级为空对象） */
-  private readSavedSettings(): Record<string, unknown> {
-    try {
-      if (fs.existsSync(SETTINGS_FILE)) {
-        return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-      }
-    } catch {
-      // 设置文件损坏时静默降级到环境变量/默认值
-    }
-    return {};
-  }
-
   /** AI 开关与尝试轮数，优先级：采集页注入 > settings.json > 默认（关闭 / 10 次） */
   private resolveAiOptions(): { enabled: boolean; maxAttempts: number } {
-    const saved = this.readSavedSettings();
+    const saved = readSavedSettings();
     const savedAttempts =
       typeof saved.aiMaxAttempts === 'number' && saved.aiMaxAttempts >= 1
         ? Math.floor(saved.aiMaxAttempts)
@@ -192,38 +170,10 @@ export class CaptchaSolver {
   }
 
   /**
-   * 动态解析配置，优先级：构造参数 > settings.json（系统设置页保存）> 环境变量 > 默认值
-   *
-   * 每次求解前重新读取，保证在「系统设置」里切换模型 / Key 后无需重启即生效。
+   * 解析 AI 连接配置（委托给共享客户端；构造参数优先级最高）
    */
-  private resolveConfig(): { apiKey: string | null; baseURL: string; model: string } {
-    let saved: Record<string, string> = {};
-    try {
-      saved = this.readSavedSettings() as Record<string, string>;
-    } catch {
-      // 设置文件损坏时静默降级到环境变量
-    }
-
-    const pick = (...candidates: (string | undefined)[]): string | null => {
-      for (const c of candidates) {
-        if (c) return c; // 跳过 undefined 和空字符串
-      }
-      return null;
-    };
-
-    return {
-      apiKey: pick(
-        this.overrides.apiKey,
-        saved.qwenApiKey,
-        process.env.QWEN_API_KEY,
-        process.env.DASHSCOPE_API_KEY
-      ),
-      baseURL:
-        pick(this.overrides.baseURL, saved.qwenBaseUrl, process.env.QWEN_BASE_URL) ??
-        DEFAULT_BASE_URL,
-      model:
-        pick(this.overrides.model, saved.qwenModel, process.env.QWEN_VL_MODEL) ?? DEFAULT_MODEL,
-    };
+  private resolveConfig(): AiConfig {
+    return resolveAiConfig(this.overrides);
   }
 
   /** 是否启用 AI 求解（需在采集页/系统设置中开启开关，且已配置 API Key） */
@@ -287,62 +237,6 @@ export class CaptchaSolver {
       log(`🤖 截图已保存：${file}（${(buf.length / 1024).toFixed(1)}KB）`);
     } catch {
       // 调试截图保存失败不影响主流程
-    }
-  }
-
-  /**
-   * 连通性测试：发送一条纯文本消息，验证 API Key / 模型 / 接口地址是否可用
-   * @returns success + 可读的结果描述（含延迟与模型回复或错误详情）
-   */
-  async testConnection(): Promise<{ success: boolean; message: string; latencyMs?: number }> {
-    const { apiKey, baseURL, model } = this.resolveConfig();
-    if (!apiKey) {
-      return { success: false, message: '未配置 API Key，请先填写后再测试' };
-    }
-
-    const start = Date.now();
-    try {
-      const resp = await fetch(`${baseURL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 16,
-          temperature: 0,
-          messages: [{ role: 'user', content: '请只回复两个字：正常' }],
-        }),
-      });
-      const latencyMs = Date.now() - start;
-
-      if (!resp.ok) {
-        const body = await resp.text().catch(() => '');
-        // 提取 DashScope/OpenAI 风格的错误信息
-        let detail = body.slice(0, 200);
-        try {
-          const errObj = JSON.parse(body);
-          detail = errObj.error?.message || errObj.message || detail;
-        } catch { /* 保留原始文本 */ }
-        return { success: false, latencyMs, message: `HTTP ${resp.status}：${detail}` };
-      }
-
-      const data = (await resp.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const reply = data.choices?.[0]?.message?.content?.trim() || '(空回复)';
-      return {
-        success: true,
-        latencyMs,
-        message: `连通成功，模型「${model}」响应 ${latencyMs}ms，回复：${reply.slice(0, 30)}`,
-      };
-    } catch (e) {
-      return {
-        success: false,
-        latencyMs: Date.now() - start,
-        message: `网络错误：${e instanceof Error ? e.message : String(e)}`,
-      };
     }
   }
 
@@ -760,7 +654,6 @@ export class CaptchaSolver {
     chars: string[],
     log: (msg: string) => void
   ): Promise<{ x: number; y: number; text?: string }[]> {
-    const { apiKey, baseURL, model } = this.resolveConfig();
     const prompt = `这是一组从验证码图片中识别出的汉字（顺序已打乱）：${JSON.stringify(chars)}
 验证码要求"按语序依次点击"，即这 ${chars.length} 个汉字能组成一句通顺的话。
 规则：
@@ -776,25 +669,11 @@ export class CaptchaSolver {
 返回 JSON（只返回 JSON 本身）：{"phrase": "组成的短语"}`;
 
     try {
-      const resp = await fetch(`${baseURL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(15000),
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          max_tokens: 100,
-          messages: [{ role: 'user', content: prompt }],
-        }),
+      const { text } = await callAiText(prompt, {
+        maxTokens: 100,
+        timeoutMs: 15000,
+        overrides: this.overrides,
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = (await resp.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const text = data.choices?.[0]?.message?.content?.trim() ?? '';
       const m = text.match(/\{[\s\S]*\}/);
       if (!m) throw new Error('返回中未找到 JSON');
       const phrase = String(JSON.parse(m[0]).phrase ?? '').replace(/[\s，。、,.!！?？「」]/g, '');
@@ -827,31 +706,16 @@ export class CaptchaSolver {
     chars: string[],
     log: (msg: string) => void
   ): Promise<{ x: number; y: number; text?: string }[]> {
-    const { apiKey, baseURL, model } = this.resolveConfig();
     const prompt = `这是一组从验证码图片中识别出的汉字：${JSON.stringify(chars)}
 验证码提示要求依次点击「${hint}」。请返回这些字中与提示对应的点击顺序。
 返回 JSON（只返回 JSON 本身）：{"order": [按点击顺序排列的原数组下标]}，例如 {"order": [2, 0, 3, 1]}`;
 
     try {
-      const resp = await fetch(`${baseURL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(15000),
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          max_tokens: 100,
-          messages: [{ role: 'user', content: prompt }],
-        }),
+      const { text } = await callAiText(prompt, {
+        maxTokens: 100,
+        timeoutMs: 15000,
+        overrides: this.overrides,
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = (await resp.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const text = data.choices?.[0]?.message?.content?.trim() ?? '';
       const m = text.match(/\{[\s\S]*\}/);
       if (!m) throw new Error('返回中未找到 JSON');
       const order = JSON.parse(m[0]).order;
@@ -941,33 +805,7 @@ export class CaptchaSolver {
     content: ({ type: 'image_url'; image_url: { url: string } } | { type: 'text'; text: string })[],
     maxTokens?: number
   ): Promise<{ text: string; latencyMs: number }> {
-    const { apiKey, baseURL, model } = this.resolveConfig();
-    const reqStart = Date.now();
-    const resp = await fetch(`${baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      // 30 秒超时，防止代理挂起导致一直等待
-      signal: AbortSignal.timeout(30000),
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        ...(maxTokens ? { max_tokens: maxTokens } : {}),
-        messages: [{ role: 'user', content }],
-      }),
-    });
-
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      throw new Error(`Qwen-VL 请求失败 HTTP ${resp.status}: ${body.slice(0, 200)}`);
-    }
-
-    const data = (await resp.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    return { text: data.choices?.[0]?.message?.content?.trim() ?? '', latencyMs: Date.now() - reqStart };
+    return callAi(content, { maxTokens, overrides: this.overrides });
   }
 
   /**
