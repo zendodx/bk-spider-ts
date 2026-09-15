@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const keyword  = searchParams.get('keyword')?.trim() ?? '';
     const city     = searchParams.get('city')?.trim() ?? '';
+    const bizcircle = searchParams.get('bizcircle')?.trim() ?? '';
     const allowedOrder = ['listing_count', 'total_unique', 'avg_unit_price', 'latest_date', 'community', 'crawl_days'];
     const rawOrderBy   = searchParams.get('orderBy')?.trim() ?? 'listing_count';
     const orderBy      = allowedOrder.includes(rawOrderBy) ? rawOrderBy : 'listing_count';
@@ -216,11 +217,18 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // 全部板块列表（供前端筛选下拉框使用，基于未过滤的完整集合）
+    const bizcircles = [...new Set(result.map(r => r.bizcircle).filter((b): b is string => !!b))]
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'));
+
+    // 按所属板块筛选（精确匹配，选项来自下拉框）
+    const filtered = bizcircle ? result.filter(r => r.bizcircle === bizcircle) : result;
+
     // Step 4: 排序
     type NumKey = 'listing_count' | 'total_unique' | 'avg_unit_price' | 'crawl_days';
     type StrKey = 'community' | 'latest_date';
     const numericCols = new Set<string>(['listing_count', 'total_unique', 'avg_unit_price', 'crawl_days']);
-    result.sort((a, b) => {
+    filtered.sort((a, b) => {
       if (numericCols.has(orderBy)) {
         const na = (a[orderBy as NumKey] as number | null) ?? -Infinity;
         const nb = (b[orderBy as NumKey] as number | null) ?? -Infinity;
@@ -234,8 +242,9 @@ export async function GET(request: NextRequest) {
 
     return Response.json({
       success: true,
-      data:    result.slice(0, limit),
-      total:   result.length,
+      data:    filtered.slice(0, limit),
+      total:   filtered.length,
+      bizcircles,
     });
   } catch (e) {
     return Response.json({ success: false, error: String(e), data: [] }, { status: 500 });

@@ -279,16 +279,21 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
   // 编辑小区基本信息弹窗
   const [editingCommunity, setEditingCommunity] = useState<CommunityStatRow | null>(null);
 
+  // 所属板块筛选
+  const [bizcircle, setBizcircle] = useState('');
+  const [bizcircleOptions, setBizcircleOptions] = useState<string[]>([]);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [orderBy, order] = sortKey.split('|') as [OrderBy, 'asc' | 'desc'];
 
-  const fetchData = useCallback(async (kw: string, ob: OrderBy, od: string, lim: number, cityFilter?: string) => {
+  const fetchData = useCallback(async (kw: string, ob: OrderBy, od: string, lim: number, bc: string, cityFilter?: string) => {
     setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams({ orderBy: ob, order: od, limit: String(lim) });
       if (kw) params.set('keyword', kw);
+      if (bc) params.set('bizcircle', bc);
       const cf = cityFilter ?? selectedCityFilter;
       if (cf) params.set('city', cf);
       const res  = await fetch(`/api/community/stats?${params}`);
@@ -296,6 +301,7 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
       if (json.success) {
         setRows(json.data ?? []);
         setTotal(json.total ?? 0);
+        setBizcircleOptions(json.bizcircles ?? []);
         setQueried(true);
       } else {
         setError(json.error ?? '查询失败');
@@ -309,16 +315,16 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
 
   // 首次加载
   useEffect(() => {
-    fetchData('', 'listing_count', 'desc', 200);
+    fetchData('', 'listing_count', 'desc', 200, '');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchData]);
 
-  // 排序/limit 变化时重新查询
+  // 排序/limit/板块筛选 变化时重新查询
   useEffect(() => {
     if (!queried) return;
-    fetchData(keyword, orderBy, order, limit);
+    fetchData(keyword, orderBy, order, limit, bizcircle);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortKey, limit, selectedCityFilter]);
+  }, [sortKey, limit, bizcircle, selectedCityFilter]);
 
   // 关键词防抖查询
   const handleKeywordChange = (val: string) => {
@@ -326,7 +332,7 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setKeyword(val);
-      fetchData(val, orderBy, order, limit);
+      fetchData(val, orderBy, order, limit, bizcircle);
     }, 400);
   };
 
@@ -386,6 +392,21 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
             </select>
           </div>
 
+          {/* 所属板块筛选 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">所属板块</label>
+            <select
+              value={bizcircle}
+              onChange={e => setBizcircle(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">全部板块</option>
+              {bizcircleOptions.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+
           {/* 条数限制 */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">最多显示</label>
@@ -403,7 +424,7 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
           {/* 刷新 */}
           <div className="flex items-end">
             <button
-              onClick={() => fetchData(keyword, orderBy, order, limit)}
+              onClick={() => fetchData(keyword, orderBy, order, limit, bizcircle)}
               disabled={loading}
               className="px-5 py-2 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center gap-2"
             >
