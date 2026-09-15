@@ -9,6 +9,8 @@ interface CommunityStatRow {
   city: string;
   district: string;
   community_url: string | null;
+  /** 所属板块（用户手工维护，未维护为 null） */
+  bizcircle: string | null;
   latest_date: string;
   first_date: string;
   crawl_days: number;
@@ -109,6 +111,158 @@ function SortTh({
   );
 }
 
+// ===== 编辑小区基本信息弹窗 =====
+interface CommunityInfoForm {
+  bizcircle: string;
+  address: string;
+  build_year: string;
+  developer: string;
+  property_company: string;
+  note: string;
+}
+
+const EMPTY_INFO_FORM: CommunityInfoForm = {
+  bizcircle: '', address: '', build_year: '', developer: '', property_company: '', note: '',
+};
+
+function EditCommunityModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: CommunityStatRow;
+  onClose: () => void;
+  onSaved: (bizcircle: string) => void;
+}) {
+  const [form, setForm]       = useState<CommunityInfoForm>(EMPTY_INFO_FORM);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+
+  // 打开时加载已维护的小区信息
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/community/info?community=${encodeURIComponent(row.community)}`)
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled) return;
+        if (json.success && json.data) {
+          const d = json.data;
+          setForm({
+            bizcircle:        d.bizcircle ?? '',
+            address:          d.address ?? '',
+            build_year:       d.build_year ?? '',
+            developer:        d.developer ?? '',
+            property_company: d.property_company ?? '',
+            note:             d.note ?? '',
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [row.community]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/community/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ community: row.community, ...form }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        onSaved(form.bizcircle.trim());
+      } else {
+        setError(json.error ?? '保存失败');
+      }
+    } catch (e) {
+      setError(`请求异常: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fields: { key: keyof Omit<CommunityInfoForm, 'note'>; label: string; placeholder: string }[] = [
+    { key: 'bizcircle',        label: '所属板块', placeholder: '如：汉峪板块' },
+    { key: 'address',          label: '小区地址', placeholder: '如：历下区经十路 12345 号' },
+    { key: 'build_year',       label: '建筑年代', placeholder: '如：2005 或 1998-2005' },
+    { key: 'developer',        label: '开发商',   placeholder: '如：中海地产' },
+    { key: 'property_company', label: '物业公司', placeholder: '如：中海物业' },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[85vh]">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 flex-shrink-0">
+          <div>
+            <span className="text-base font-semibold text-gray-700">✏️ 编辑小区信息</span>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {row.community}（{[row.city, row.district].filter(Boolean).join(' / ') || '未知地区'}）
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
+          >✕</button>
+        </div>
+
+        {/* 内容区 */}
+        <div className="px-5 py-4 overflow-y-auto">
+          {loading ? (
+            <div className="py-10 text-center text-sm text-gray-400">加载中...</div>
+          ) : (
+            <div className="space-y-3">
+              {fields.map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+                  <input
+                    type="text"
+                    value={form[f.key]}
+                    onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">备注</label>
+                <textarea
+                  value={form.note}
+                  onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
+                  placeholder="其他需要记录的信息..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+              {error && <p className="text-xs text-red-500">{error}</p>}
+            </div>
+          )}
+        </div>
+
+        {/* 底部操作栏 */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-gray-200 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          >取消</button>
+          <button
+            onClick={handleSave}
+            disabled={loading || saving}
+            className="px-4 py-1.5 text-sm text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors"
+          >{saving ? '保存中...' : '💾 保存'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings, onOpenStats, onOpenFavorites, onOpenSpider, onOpenExpired }: CommunityPanelProps) {
   const { selectedCityFilter } = useCityContext();
   const [keyword, setKeyword]     = useState('');
@@ -121,6 +275,9 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
   const [error, setError]         = useState('');
   const [total, setTotal]         = useState(0);
   const [queried, setQueried]     = useState(false);
+
+  // 编辑小区基本信息弹窗
+  const [editingCommunity, setEditingCommunity] = useState<CommunityStatRow | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -330,6 +487,7 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
                   <col className="w-8" />           {/* # */}
                   <col className="w-40" />           {/* 小区 */}
                   <col className="w-28" />           {/* 地区 */}
+                  <col className="w-24" />           {/* 所属板块 */}
                   <col className="w-24" />           {/* 最新采集 */}
                   <col className="w-20" />           {/* 采集天数 */}
                   <col className="w-20" />           {/* 挂牌数 */}
@@ -345,6 +503,7 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
                     <th className="px-3 py-2.5 text-left font-semibold text-gray-500">#</th>
                     <SortTh label="小区" col="community" currentCol={orderBy} currentOrder={order} onClick={handleSortClick} className="text-left" />
                     <th className="px-3 py-2.5 text-left font-semibold text-gray-500 whitespace-nowrap">地区</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-gray-500 whitespace-nowrap">所属板块</th>
                     <SortTh label="最新采集" col="latest_date" currentCol={orderBy} currentOrder={order} onClick={handleSortClick} className="text-center" />
                     <SortTh label="采集天数" col="crawl_days" currentCol={orderBy} currentOrder={order} onClick={handleSortClick} className="text-center" />
                     <SortTh label="当前挂牌" col="listing_count" currentCol={orderBy} currentOrder={order} onClick={handleSortClick} className="text-center" />
@@ -392,6 +551,11 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
                       {/* 地区 */}
                       <td className="px-3 py-2.5 text-gray-500 truncate" title={[row.city, row.district].filter(Boolean).join(' ')}>
                         {row.district || row.city || '—'}
+                      </td>
+
+                      {/* 所属板块 */}
+                      <td className="px-3 py-2.5 text-gray-500 truncate" title={row.bizcircle ?? ''}>
+                        {row.bizcircle || '—'}
                       </td>
 
                       {/* 最新采集 */}
@@ -501,6 +665,13 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
                           ) : (
                             <span className="px-1.5 py-0.5 text-gray-300" title="该小区缺少链接，暂不支持采光分析">☀️ —</span>
                           )}
+                          <button
+                            onClick={() => setEditingCommunity(row)}
+                            className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium whitespace-nowrap transition-colors"
+                            title="编辑该小区的基本信息（板块/地址/建筑年代等）"
+                          >
+                            ✏️ 编辑
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -518,6 +689,20 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
             <p className="text-lg font-medium text-gray-600">未找到匹配的小区</p>
             <p className="text-sm mt-1">尝试修改关键词或先运行爬虫采集数据</p>
           </div>
+        )}
+
+        {/* 编辑小区基本信息弹窗 */}
+        {editingCommunity && (
+          <EditCommunityModal
+            row={editingCommunity}
+            onClose={() => setEditingCommunity(null)}
+            onSaved={(bizcircle) => {
+              setRows(prev => prev.map(r =>
+                r.community === editingCommunity.community ? { ...r, bizcircle: bizcircle || null } : r
+              ));
+              setEditingCommunity(null);
+            }}
+          />
         )}
       </div>
     </div>

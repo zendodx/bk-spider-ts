@@ -158,6 +158,24 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_house_favorite_community ON house_favorite (community);
   `);
 
+  // 小区基本信息表（用户手工维护，爬虫不覆盖）：所属板块、地址等
+  // 以 community 作为唯一键，与 /api/community/stats 按小区名聚合的口径保持一致
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS community_info (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      community        TEXT    NOT NULL,
+      bizcircle        TEXT    NOT NULL DEFAULT '',
+      address          TEXT    NOT NULL DEFAULT '',
+      build_year       TEXT    NOT NULL DEFAULT '',
+      developer        TEXT    NOT NULL DEFAULT '',
+      property_company TEXT    NOT NULL DEFAULT '',
+      note             TEXT    NOT NULL DEFAULT '',
+      created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+      updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_community_info_community ON community_info (community);
+  `);
+
   // 房源备注表（独立于收藏，任意房源均可记录备注）
   instance.exec(`
     CREATE TABLE IF NOT EXISTS house_note (
