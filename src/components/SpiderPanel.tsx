@@ -21,8 +21,8 @@ interface SpiderParams {
   blockResources: boolean;
   /** AI 自动识别验证码开关（默认关闭） */
   aiCaptchaEnabled: boolean;
-  /** AI 单次验证码最大尝试轮数（默认 10） */
-  aiMaxAttempts: number;
+/** AI 单次验证码最大尝试轮数（默认 20） */
+aiMaxAttempts: number;
 }
 
 interface ProgressInfo {
@@ -50,7 +50,7 @@ export default function SpiderPanel({ pendingCommunity, onConsumePendingCommunit
     host: 'https://jn.ke.com',
     sug: '',
     houseId: '',
-    maxPage: 50,
+    maxPage: 500,
     pageWait: 1.0,
     captchaTimeoutMinutes: 10,
     speedMode: 'fast',
@@ -63,7 +63,7 @@ export default function SpiderPanel({ pendingCommunity, onConsumePendingCommunit
     dataDir: '',
     blockResources: false,
     aiCaptchaEnabled: true,
-    aiMaxAttempts: 10,
+    aiMaxAttempts: 20,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -594,10 +594,10 @@ export default function SpiderPanel({ pendingCommunity, onConsumePendingCommunit
                   <input
                     type="number" min={1} max={50}
                     value={params.aiMaxAttempts}
-                    onChange={e => setParams(p => ({ ...p, aiMaxAttempts: parseInt(e.target.value) || 10 }))}
+                    onChange={e => setParams(p => ({ ...p, aiMaxAttempts: parseInt(e.target.value) || 20 }))}
                     className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-400 mt-1">超过此次数仍未通过则转人工处理，默认 10 次</p>
+                  <p className="text-xs text-gray-400 mt-1">超过此次数仍未通过则转人工处理，默认 20 次</p>
                 </div>
               )}
             </div>

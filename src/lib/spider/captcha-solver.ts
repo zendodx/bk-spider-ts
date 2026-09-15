@@ -27,7 +27,7 @@ import {
 const DEBUG_DIR = path.join(os.homedir(), 'bk_spider_data', 'captcha_debug');
 
 /** AI 求解单次验证码的默认最大尝试轮数（可在采集页/系统设置中配置覆盖） */
-const AI_MAX_ATTEMPTS = 10;
+const AI_MAX_ATTEMPTS = 20;
 
 /** 操作完成后等待验证码组件消失的时间 */
 const VERIFY_WAIT_MS = 3000;
@@ -156,7 +156,7 @@ export class CaptchaSolver {
     }
   }
 
-  /** AI 开关与尝试轮数，优先级：采集页注入 > settings.json > 默认（关闭 / 10 次） */
+  /** AI 开关与尝试轮数，优先级：采集页注入 > settings.json > 默认（关闭 / 20 次） */
   private resolveAiOptions(): { enabled: boolean; maxAttempts: number } {
     const saved = readSavedSettings();
     const savedAttempts =

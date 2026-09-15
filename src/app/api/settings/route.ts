@@ -55,7 +55,7 @@ const DEFAULT_CITY_HOST_MAP: Record<string, string> = {
 const DEFAULT_SETTINGS: AppSettings = {
   host: 'https://jn.ke.com',
   sug: '济南尊',
-  maxPage: 50,
+  maxPage: 500,
   pageWait: 1.0,
   speedMode: 'fast',
   minDelay: 1.5,
@@ -71,7 +71,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   qwenModel: 'qwen-vl-max-latest',
   qwenBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   aiCaptchaEnabled: true,
-  aiMaxAttempts: 10,
+  aiMaxAttempts: 20,
 };
 
 export async function GET() {
@@ -80,10 +80,17 @@ export async function GET() {
       return Response.json({ success: true, data: DEFAULT_SETTINGS });
     }
 
-    const content = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    const saved = JSON.parse(content);
-    const data = { ...DEFAULT_SETTINGS, ...saved };
-    return Response.json({ success: true, data });
+const content = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+const saved = JSON.parse(content);
+// 旧默认值迁移：50 页 / 10 次是历史默认值（用户未曾主动配置），自动升级为新默认值 500 页 / 20 次并写回
+let migrated = false;
+if (saved.maxPage === 50) { saved.maxPage = 500; migrated = true; }
+if (saved.aiMaxAttempts === 10) { saved.aiMaxAttempts = 20; migrated = true; }
+if (migrated) {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(saved, null, 2), 'utf-8');
+}
+const data = { ...DEFAULT_SETTINGS, ...saved };
+return Response.json({ success: true, data });
   } catch (e) {
     return Response.json({ success: true, data: DEFAULT_SETTINGS });
   }

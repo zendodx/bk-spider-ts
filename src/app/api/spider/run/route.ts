@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
           host,
           sug,
           houseId = '',
-          maxPage = 50,
+          maxPage = 500,
           pageWait = 1.0,
           speedMode = 'fast',
           minDelay,
