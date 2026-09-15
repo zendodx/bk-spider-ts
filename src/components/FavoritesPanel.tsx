@@ -19,6 +19,8 @@ interface FavoriteRow {
   total_price: number | null;
   unit_price: number | null;
   detail_url: string | null;
+  /** 房源备注（导出时由 noteMap 注入，接口本身不返回） */
+  note?: string;
   created_at: string;
   updated_at: string;
 }

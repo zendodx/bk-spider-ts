@@ -26,6 +26,7 @@ export default function Home() {
   const [pendingStatsCommunity, setPendingStatsCommunity] = useState<string | null>(null);
   const [pendingFavoritesCommunity, setPendingFavoritesCommunity] = useState<string | null>(null);
   const [pendingSpiderCommunity, setPendingSpiderCommunity] = useState<string | null>(null);
+  const [pendingExpiredCommunity, setPendingExpiredCommunity] = useState<string | null>(null);
 
   const handleOpenSunlightAnalysis = (targetInfo: SunlightTarget) => {
     setPendingSunlightTarget(targetInfo);
@@ -47,6 +48,10 @@ export default function Home() {
   const handleOpenSpider = (target: CommunityActionTarget) => {
     setPendingSpiderCommunity(target.community);
     setActiveTab('spider');
+  };
+  const handleOpenExpired = (target: CommunityActionTarget) => {
+    setPendingExpiredCommunity(target.community);
+    setActiveTab('expired');
   };
   const { theme, setTheme } = useTheme();
   const { cityNames, selectedCity, setSelectedCity, selectedHost } = useCityContext();
@@ -170,8 +175,8 @@ export default function Home() {
         <div className="h-full" style={{ display: activeTab === 'loan'      ? 'block' : 'none' }}><LoanPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'stats'     ? 'block' : 'none' }}><StatsPanel pendingCommunity={pendingStatsCommunity} onConsumePendingCommunity={() => setPendingStatsCommunity(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'listings'  ? 'block' : 'none' }}><ListingsPanel pendingTarget={pendingListingsTarget} onConsumePendingTarget={() => setPendingListingsTarget(null)} /></div>
-        <div className="h-full" style={{ display: activeTab === 'expired'   ? 'block' : 'none' }}><ExpiredListingsPanel /></div>
-        <div className="h-full" style={{ display: activeTab === 'community' ? 'block' : 'none' }}><CommunityPanel onOpenSunlightAnalysis={handleOpenSunlightAnalysis} onOpenListings={handleOpenListings} onOpenStats={handleOpenStats} onOpenFavorites={handleOpenFavorites} onOpenSpider={handleOpenSpider} /></div>
+        <div className="h-full" style={{ display: activeTab === 'expired'   ? 'block' : 'none' }}><ExpiredListingsPanel pendingCommunity={pendingExpiredCommunity} onConsumePendingCommunity={() => setPendingExpiredCommunity(null)} /></div>
+        <div className="h-full" style={{ display: activeTab === 'community' ? 'block' : 'none' }}><CommunityPanel onOpenSunlightAnalysis={handleOpenSunlightAnalysis} onOpenListings={handleOpenListings} onOpenStats={handleOpenStats} onOpenFavorites={handleOpenFavorites} onOpenSpider={handleOpenSpider} onOpenExpired={handleOpenExpired} /></div>
         <div className="h-full" style={{ display: activeTab === 'sunlight' ? 'block' : 'none' }}><SunlightPanel pendingTarget={pendingSunlightTarget} onConsumePendingTarget={() => setPendingSunlightTarget(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'favorites' ? 'block' : 'none' }}><FavoritesPanel pendingCommunity={pendingFavoritesCommunity} onConsumePendingCommunity={() => setPendingFavoritesCommunity(null)} /></div>
         <div className="h-full" style={{ display: activeTab === 'cleaner'   ? 'block' : 'none' }}><CleanerPanel /></div>

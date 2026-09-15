@@ -45,6 +45,7 @@ interface CommunityPanelProps {
   onOpenStats?: (target: CommunityActionTarget) => void;
   onOpenFavorites?: (target: CommunityActionTarget) => void;
   onOpenSpider?: (target: CommunityActionTarget) => void;
+  onOpenExpired?: (target: CommunityActionTarget) => void;
 }
 
 const ORDER_OPTIONS: { value: `${OrderBy}|${'asc' | 'desc'}`; label: string }[] = [
@@ -108,7 +109,7 @@ function SortTh({
   );
 }
 
-export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings, onOpenStats, onOpenFavorites, onOpenSpider }: CommunityPanelProps) {
+export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings, onOpenStats, onOpenFavorites, onOpenSpider, onOpenExpired }: CommunityPanelProps) {
   const { selectedCityFilter } = useCityContext();
   const [keyword, setKeyword]     = useState('');
   const [inputKeyword, setInputKeyword] = useState('');
@@ -455,6 +456,13 @@ export default function CommunityPanel({ onOpenSunlightAnalysis, onOpenListings,
                             title="查看该小区的房源列表"
                           >
                             🏘️ 房源
+                          </button>
+                          <button
+                            onClick={() => onOpenExpired?.({ community: row.community })}
+                            className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-medium whitespace-nowrap transition-colors"
+                            title="查看该小区的失效房源"
+                          >
+                            🏚️ 失效
                           </button>
                           <button
                             onClick={() => onOpenStats?.({ community: row.community })}
