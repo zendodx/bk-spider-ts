@@ -176,6 +176,23 @@ export async function initDatabase(dbPath?: string): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_community_info_community ON community_info (community);
   `);
 
+  // 小区 AI 购房分析记录表：每次分析落库，避免重复调用 AI
+  instance.exec(`
+    CREATE TABLE IF NOT EXISTS community_ai_analysis (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      community       TEXT    NOT NULL,
+      city            TEXT    NOT NULL DEFAULT '',
+      base_date       TEXT    NOT NULL DEFAULT '',
+      inventory_count INTEGER NOT NULL DEFAULT 0,
+      expired_count   INTEGER NOT NULL DEFAULT 0,
+      notes_count     INTEGER NOT NULL DEFAULT 0,
+      summary         TEXT    NOT NULL DEFAULT '',
+      latency_ms      INTEGER NOT NULL DEFAULT 0,
+      created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_analysis_community ON community_ai_analysis (community, created_at);
+  `);
+
   // 房源备注表（独立于收藏，任意房源均可记录备注）
   instance.exec(`
     CREATE TABLE IF NOT EXISTS house_note (

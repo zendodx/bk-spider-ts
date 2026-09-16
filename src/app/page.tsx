@@ -13,10 +13,11 @@ import BackupPanel from '@/components/BackupPanel';
 import ExpiredListingsPanel from '@/components/ExpiredListingsPanel';
 import CommunityPanel, { type SunlightTarget, type CommunityActionTarget } from '@/components/CommunityPanel';
 import SunlightPanel from '@/components/SunlightPanel';
+import AiSummaryPanel from '@/components/AiSummaryPanel';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 import { useCityContext } from '@/lib/CityContext';
 
-type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'community' | 'sunlight' | 'favorites' | 'cleaner' | 'settings' | 'backup';
+type Tab = 'spider' | 'predict' | 'loan' | 'stats' | 'listings' | 'expired' | 'community' | 'sunlight' | 'favorites' | 'cleaner' | 'settings' | 'backup' | 'ai-analysis';
 
 interface MenuItem {
   id: Tab;
@@ -46,6 +47,9 @@ const MENU_GROUPS: MenuGroup[] = [
     { id: 'community', label: '小区信息', icon: '🗺️' },
     { id: 'stats',     label: '价格统计', icon: '📊' },
     { id: 'sunlight',  label: '采光分析', icon: '☀️' },
+  ]},
+  { id: 'ai', label: 'AI分析', icon: '🤖', items: [
+    { id: 'ai-analysis', label: '购房决策分析', icon: '🧭' },
   ]},
   { id: 'tools', label: '实用工具', icon: '🧰', items: [
     { id: 'predict',   label: '房价预测', icon: '🏠' },
@@ -294,6 +298,7 @@ export default function Home() {
         <div className="h-full" style={{ display: activeTab === 'cleaner'   ? 'block' : 'none' }}><CleanerPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'settings'  ? 'block' : 'none' }}><SettingsPanel /></div>
         <div className="h-full" style={{ display: activeTab === 'backup'    ? 'block' : 'none' }}><BackupPanel /></div>
+        <div className="h-full" style={{ display: activeTab === 'ai-analysis' ? 'block' : 'none' }}><AiSummaryPanel /></div>
       </main>
       </div>
     </div>
