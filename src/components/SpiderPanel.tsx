@@ -19,6 +19,10 @@ interface SpiderParams {
   exportCsv: boolean;
   dataDir: string;
   blockResources: boolean;
+  /** AI 自动识别验证码开关（默认关闭） */
+  aiCaptchaEnabled: boolean;
+/** AI 单次验证码最大尝试轮数（默认 20） */
+aiMaxAttempts: number;
 }
 
 interface ProgressInfo {
@@ -33,25 +37,33 @@ interface LogEntry {
   timestamp: string;
 }
 
-export default function SpiderPanel() {
+interface SpiderPanelProps {
+  /** 从其他面板跳转进来时待消费的小区名（自动填入 SUG） */
+  pendingCommunity?: string | null;
+  onConsumePendingCommunity?: () => void;
+}
+
+export default function SpiderPanel({ pendingCommunity, onConsumePendingCommunity }: SpiderPanelProps) {
   const { selectedCityFilter, selectedHost } = useCityContext();
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [params, setParams] = useState<SpiderParams>({
     host: 'https://jn.ke.com',
     sug: '',
     houseId: '',
-    maxPage: 50,
+    maxPage: 500,
     pageWait: 1.0,
     captchaTimeoutMinutes: 10,
-    speedMode: 'normal',
+    speedMode: 'fast',
     minDelay: 1.5,
     maxDelay: 3.5,
     pageInterval: 2.0,
     maxRetries: 3,
     maxEmptyPages: 1,
-    exportCsv: true,
+    exportCsv: false,
     dataDir: '',
     blockResources: false,
+    aiCaptchaEnabled: true,
+    aiMaxAttempts: 20,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -129,6 +141,8 @@ export default function SpiderPanel() {
           maxEmptyPages: s.maxEmptyPages ?? prev.maxEmptyPages,
           exportCsv: s.exportCsv ?? prev.exportCsv,
           dataDir: s.dataDir || prev.dataDir,
+          aiCaptchaEnabled: s.aiCaptchaEnabled ?? prev.aiCaptchaEnabled,
+          aiMaxAttempts: s.aiMaxAttempts ?? prev.aiMaxAttempts,
         }));
       }
     });
@@ -166,6 +180,16 @@ export default function SpiderPanel() {
       houseId: mapping[sug] || prev.houseId,
     }));
   };
+
+  // 从小区信息面板跳转进来：自动填入小区名到 SUG
+  useEffect(() => {
+    if (!pendingCommunity) return;
+    handleSugChange(pendingCommunity);
+    setCommunityKeyword(pendingCommunity);
+    onConsumePendingCommunity?.();
+    addLog(`已从小区信息面板填入目标小区: ${pendingCommunity}，点击「启动爬虫」开始采集`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommunity]);
 
   const handleSpeedModeChange = (mode: string) => {
     setParams(prev => ({ ...prev, speedMode: mode }));
@@ -546,6 +570,36 @@ export default function SpiderPanel() {
                   </p>
                 </div>
               </label>
+
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={params.aiCaptchaEnabled}
+                  onChange={e => setParams(p => ({ ...p, aiCaptchaEnabled: e.target.checked }))}
+                  className="text-blue-500 mt-0.5"
+                />
+                <div>
+                  <span className="text-sm text-gray-700">AI 自动识别验证码</span>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    遇到人机验证时由 AI 自动完成，多次失败仍转人工；需先在「系统设置」配置通义千问 API Key
+                  </p>
+                </div>
+              </label>
+
+              {params.aiCaptchaEnabled && (
+                <div className="pl-6">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    AI 尝试次数（每次验证码）
+                  </label>
+                  <input
+                    type="number" min={1} max={50}
+                    value={params.aiMaxAttempts}
+                    onChange={e => setParams(p => ({ ...p, aiMaxAttempts: parseInt(e.target.value) || 20 }))}
+                    className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">超过此次数仍未通过则转人工处理，默认 20 次</p>
+                </div>
+              )}
             </div>
           </section>
 

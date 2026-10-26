@@ -7,6 +7,7 @@
 import { Page } from 'playwright';
 import { AdaptiveSpeedController, PageLoadOptimizer, sleep } from './speed-controller';
 import { setWindowVisible } from './driver';
+import { getCaptchaSolver } from './captcha-solver';
 
 export interface HouseRawData {
   头图: string | null;
@@ -47,7 +48,13 @@ export class HouseParser {
    * 解析单页房源
    * 新增：自动滚动触发懒加载
    */
-  async parsePage(page: Page, url: string, host: string, onCaptcha?: (resolved: boolean) => void): Promise<HouseRawData[]> {
+  async parsePage(
+    page: Page,
+    url: string,
+    host: string,
+    onCaptcha?: (resolved: boolean) => void,
+    onLog?: (msg: string) => void
+  ): Promise<HouseRawData[]> {
     const startTime = Date.now();
 
     // 请求前等待间隔
@@ -67,7 +74,7 @@ export class HouseParser {
 
       while (!listLoaded) {
         // 先检测验证码（优先级最高）
-        await this.handleCaptchaIfPresent(page, url, onCaptcha, this.captchaTimeout);
+        await this.handleCaptchaIfPresent(page, url, onCaptcha, this.captchaTimeout, onLog);
 
         // 检查列表是否已出现
         const el = await page.$('ul.sellListContent li.clear');
@@ -171,13 +178,15 @@ export class HouseParser {
   /**
    * 单次检测验证码：
    * - 未发现验证码 → 立即返回
-   * - 发现验证码   → 阻塞等待人工完成（最长 5 分钟），完成后重新加载原页面
+   * - 发现验证码   → 先由 AI（通义千问视觉模型）尝试自动通过，失败则立即回退人工接管
+   *                  人工完成后重新加载原页面
    */
   private async handleCaptchaIfPresent(
     page: Page,
     originalUrl: string,
     onCaptcha?: (resolved: boolean) => void,
     captchaTimeout = 600000,
+    onLog?: (msg: string) => void
   ): Promise<void> {
     const CAPTCHA_SELECTORS = [
       '.geetest_btn_click',       // 极验滑块
@@ -202,6 +211,25 @@ export class HouseParser {
 
     if (!found) return; // 无验证码，直接返回
 
+    // 阶段一：AI 尝试自动通过（未配置 QWEN_API_KEY 时自动跳过）
+    const solver = getCaptchaSolver();
+    if (solver.isEnabled()) {
+      onLog?.('⚠️ 检测到人机验证，尝试 AI 自动通过...');
+      // AI 求解依赖页面截图：最小化的窗口 Chromium 不产出渲染帧，截图会超时，必须先唤出窗口
+      await setWindowVisible(page, true);
+      const solvedByAI = await solver.trySolve(page, CAPTCHA_SELECTORS, onLog);
+      if (solvedByAI) {
+        await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await setWindowVisible(page, false); // AI 通过：窗口重新最小化
+        onCaptcha?.(true);
+        return;
+      }
+      // AI 失败 → 立刻回退人工（窗口保持可见）
+    } else {
+      onLog?.('💡 未配置 AI 识别（系统设置 → AI 验证码识别），直接进入人工接管');
+    }
+
+    // 阶段二：人工接管
     console.log('⚠️ 检测到人机验证，等待人工完成...');
     await setWindowVisible(page, true);  // 验证码出现：将窗口移回屏幕中央
     onCaptcha?.(false);

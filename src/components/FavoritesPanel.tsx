@@ -19,6 +19,8 @@ interface FavoriteRow {
   total_price: number | null;
   unit_price: number | null;
   detail_url: string | null;
+  /** 房源备注（导出时由 noteMap 注入，接口本身不返回） */
+  note?: string;
   created_at: string;
   updated_at: string;
 }
@@ -381,7 +383,13 @@ const ORDER_OPTIONS = [
 ];
 
 // ===== 主面板 =====
-export default function FavoritesPanel() {
+interface FavoritesPanelProps {
+  /** 从其他面板跳转进来时待消费的小区名（自动填入并查询） */
+  pendingCommunity?: string | null;
+  onConsumePendingCommunity?: () => void;
+}
+
+export default function FavoritesPanel({ pendingCommunity, onConsumePendingCommunity }: FavoritesPanelProps) {
   // 筛选条件
   const [filterCommunity, setFilterCommunity] = useState('');
   const [filterDetailUrl, setFilterDetailUrl] = useState('');
@@ -463,12 +471,13 @@ export default function FavoritesPanel() {
   }, []);
 
   // 拉取全量收藏（community/detailUrl 由服务端过滤，其余在前端处理）
-  const fetchFavorites = useCallback(async (p: number = 1) => {
+  const fetchFavorites = useCallback(async (p: number = 1, communityOverride?: string) => {
     setLoading(true);
     setError('');
     try {
+      const fc = (communityOverride ?? filterCommunity).trim();
       const params = new URLSearchParams({ page: String(p), pageSize: String(pageSize) });
-      if (filterCommunity.trim()) params.set('community', filterCommunity.trim());
+      if (fc) params.set('community', fc);
       if (filterDetailUrl.trim()) params.set('detailUrl', filterDetailUrl.trim());
 
       const res  = await fetch(`/api/favorite?${params}`);
@@ -504,6 +513,16 @@ export default function FavoritesPanel() {
     fetchFavorites(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 从小区信息面板跳转进来：自动填入小区并查询
+  useEffect(() => {
+    if (!pendingCommunity) return;
+    setFilterCommunity(pendingCommunity);
+    setCommunityInput(pendingCommunity);
+    onConsumePendingCommunity?.();
+    fetchFavorites(1, pendingCommunity);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommunity]);
 
   const handleSearch = () => fetchFavorites(1);
 

@@ -556,7 +556,14 @@ function DaysAgoBadge({ lastSeenDate }: { lastSeenDate: string }) {
   return <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 font-medium">{days}天前</span>;
 }
 
-export default function ExpiredListingsPanel() {
+export default function ExpiredListingsPanel({
+  pendingCommunity,
+  onConsumePendingCommunity,
+}: {
+  /** 从小区信息面板跳转进来时携带的小区名 */
+  pendingCommunity?: string | null;
+  onConsumePendingCommunity?: () => void;
+} = {}) {
   const { selectedCityFilter } = useCityContext();
   // 筛选条件
   const [community, setCommunity]     = useState('');
@@ -651,8 +658,10 @@ fetch(`/api/listings/dates?community=${encodeURIComponent(c)}${_datesCityQ}`)
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleQuery = useCallback(async () => {
-    if (!community.trim()) {
+  const handleQuery = useCallback(async (communityOverride?: string) => {
+    // onClick={handleQuery} 会把点击事件作为参数传入，需判断类型
+    const targetCommunity = (typeof communityOverride === 'string' ? communityOverride : community).trim();
+    if (!targetCommunity) {
       setError('请输入或选择小区名称');
       return;
     }
@@ -666,7 +675,7 @@ fetch(`/api/listings/dates?community=${encodeURIComponent(c)}${_datesCityQ}`)
     try {
       const [orderBy, order] = sortKey.split('|');
       const params = new URLSearchParams({
-        community: community.trim(),
+        community: targetCommunity,
         excludeBasement: String(excludeBasement),
         excludeLowFloor: String(excludeLowFloor),
         excludeTwoFloor: String(excludeTwoFloor),
@@ -716,6 +725,16 @@ fetch(`/api/listings/dates?community=${encodeURIComponent(c)}${_datesCityQ}`)
       setLoading(false);
     }
   }, [community, baseDate, houseType, excludeBasement, excludeLowFloor, excludeTwoFloor, excludeOneFloor, sortKey, limit, areaEnabled, areaMin, areaMax]);
+
+  // 从小区信息面板跳转进来：自动填入小区并查询
+  useEffect(() => {
+    if (!pendingCommunity) return;
+    setCommunity(pendingCommunity);
+    setCommunityKeyword(pendingCommunity);
+    onConsumePendingCommunity?.();
+    handleQuery(pendingCommunity);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommunity]);
 
   // 格式化
   const fmtUnit  = (v: number | null) => {
@@ -933,7 +952,7 @@ fetch(`/api/listings/dates?community=${encodeURIComponent(c)}${_datesCityQ}`)
           {/* 查询按钮 */}
           <div className="flex items-end">
             <button
-              onClick={handleQuery}
+              onClick={() => handleQuery()}
               disabled={loading}
               className="px-6 py-2 bg-orange-500 text-white text-sm font-semibold rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >

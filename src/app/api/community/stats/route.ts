@@ -26,6 +26,8 @@ export interface CommunityStatRow {
   city: string;
   district: string;
   community_url: string | null;
+  /** 所属板块（来自 community_info 表，用户手工维护，未维护为 null） */
+  bizcircle: string | null;
   /** 最新采集日期 */
   latest_date: string;
   /** 首次采集日期 */
@@ -52,6 +54,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const keyword  = searchParams.get('keyword')?.trim() ?? '';
     const city     = searchParams.get('city')?.trim() ?? '';
+    const bizcircle = searchParams.get('bizcircle')?.trim() ?? '';
     const allowedOrder = ['listing_count', 'total_unique', 'avg_unit_price', 'latest_date', 'community', 'crawl_days'];
     const rawOrderBy   = searchParams.get('orderBy')?.trim() ?? 'listing_count';
     const orderBy      = allowedOrder.includes(rawOrderBy) ? rawOrderBy : 'listing_count';
@@ -100,6 +103,14 @@ export async function GET(request: NextRequest) {
     if (communities.length === 0) {
       return Response.json({ success: true, data: [], total: 0 });
     }
+
+    // Step 1.5: 查询用户手工维护的小区基本信息（所属板块等）
+    // 老库升级后表可能尚未创建（initDatabase 未执行过），失败时降级为空
+    let bizcircleMap = new Map<string, string>();
+    try {
+      const infoRows = db.prepare(`SELECT community, bizcircle FROM community_info WHERE bizcircle != ''`).all() as { community: string; bizcircle: string }[];
+      bizcircleMap = new Map(infoRows.map(r => [r.community, r.bizcircle]));
+    } catch { /* community_info 表不存在时忽略 */ }
 
     // Step 2: 批量查询每个小区在其最新采集日的挂牌数和价格统计
     // 用一条大 SQL 通过 CASE/JOIN 完成，避免 N+1
@@ -190,6 +201,7 @@ export async function GET(request: NextRequest) {
         city:             c.city,
         district:         c.district,
         community_url:    c.community_url,
+        bizcircle:        bizcircleMap.get(c.community) ?? null,
         latest_date:      c.latest_date,
         first_date:       c.first_date,
         crawl_days:       c.crawl_days,
@@ -205,11 +217,18 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // 全部板块列表（供前端筛选下拉框使用，基于未过滤的完整集合）
+    const bizcircles = [...new Set(result.map(r => r.bizcircle).filter((b): b is string => !!b))]
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'));
+
+    // 按所属板块筛选（精确匹配，选项来自下拉框）
+    const filtered = bizcircle ? result.filter(r => r.bizcircle === bizcircle) : result;
+
     // Step 4: 排序
     type NumKey = 'listing_count' | 'total_unique' | 'avg_unit_price' | 'crawl_days';
     type StrKey = 'community' | 'latest_date';
     const numericCols = new Set<string>(['listing_count', 'total_unique', 'avg_unit_price', 'crawl_days']);
-    result.sort((a, b) => {
+    filtered.sort((a, b) => {
       if (numericCols.has(orderBy)) {
         const na = (a[orderBy as NumKey] as number | null) ?? -Infinity;
         const nb = (b[orderBy as NumKey] as number | null) ?? -Infinity;
@@ -223,8 +242,9 @@ export async function GET(request: NextRequest) {
 
     return Response.json({
       success: true,
-      data:    result.slice(0, limit),
-      total:   result.length,
+      data:    filtered.slice(0, limit),
+      total:   filtered.length,
+      bizcircles,
     });
   } catch (e) {
     return Response.json({ success: false, error: String(e), data: [] }, { status: 500 });
